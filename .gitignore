@@ -1,0 +1,22 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 앱 데이터 / 비밀 (로컬에만)
+data/*.db
+data/*.sqlite3
+config/config.json
+config/token.json
+config/credentials.json
+
+# 편집기
+.vscode/
+.idea/
+
+# build
+build/
+dist/
+*.spec
