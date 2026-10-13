@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+import os
+
+from PySide6.QtCore import QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -88,18 +91,26 @@ class SettingsTab(QWidget):
         self.btn_browse_local.setProperty("variant", "ghost")
         self.btn_browse_local.clicked.connect(self._browse_local)
         self.lbl_local = theme.label(
-            "하위폴더 이름(Bot / Human)으로 봇전·사람전을 자동 구분. 구글·API·비용 없음.",
+            "하위폴더 이름(Bot / Human)으로 봇전·사람전을 자동 구분. 구글·API·비용 없음.\n"
+            "드라이브에 있는 PGN을 쓰려면: (1) 드라이브에서 폴더를 zip 으로 받아 여기에 풀기, "
+            "또는 (2) Google Drive for Desktop 을 설치해 나타나는 로컬 경로를 여기 지정. "
+            "둘 다 구글 인증(credentials.json)이 필요 없음.",
             role="muted",
         )
+        self.lbl_local.setWordWrap(True)
         self.btn_local_sync = QPushButton("로컬 동기화")
         self.btn_local_sync.setProperty("variant", "primary")
         self.btn_local_sync.clicked.connect(self._sync_local)
+        self.btn_open_local = QPushButton("폴더 열기")
+        self.btn_open_local.setProperty("variant", "ghost")
+        self.btn_open_local.clicked.connect(self._open_local)
 
         local_row = QHBoxLayout()
         local_row.addWidget(self.in_local, 1)
         local_row.addWidget(self.btn_browse_local)
         local_actions = QHBoxLayout()
         local_actions.addWidget(self.btn_local_sync)
+        local_actions.addWidget(self.btn_open_local)
         local_actions.addStretch(1)
 
         card_local = theme.card()
@@ -304,6 +315,14 @@ class SettingsTab(QWidget):
         if path:
             self.in_local.setText(path)
             self._save()
+
+    def _open_local(self) -> None:
+        self._collect()
+        path = self.in_local.text().strip()
+        if not path or not os.path.isdir(path):
+            self._log("먼저 로컬 PGN 폴더를 선택하세요.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def _sync_local(self) -> None:
         from core import pipeline
