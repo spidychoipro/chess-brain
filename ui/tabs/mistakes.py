@@ -1,8 +1,7 @@
-"""Main tab: 내 실수(My Mistakes).
+"""Main page: 내 실수(My Mistakes).
 
-The mistake list is the point of the app. Reviewing it is spaced and
-weighted, and every mistake also spawns a notation problem so the sub
-feature reinforces the same weakness.
+Reviewing my mistakes is the point of the app. The list shows what I lost
+the most, and the review button runs the spaced drill on what is due.
 """
 from __future__ import annotations
 
@@ -23,7 +22,8 @@ from PySide6.QtWidgets import (
 )
 
 from core import config as cfg_mod
-from core import db, pipeline
+from core import db, engine as engine_mod, pipeline
+from ui import theme
 from ui.widgets import ReviewDialog
 from ui.worker import PipelineWorker
 
@@ -43,38 +43,53 @@ class MistakesTab(QWidget):
         self.cb_source.addItem("Human", "human")
         self.cb_source.addItem("Bot", "bot")
         self.cb_source.addItem("Both", "both")
-        self.cb_only_wrong = QCheckBox("자주 틀린 것만 (wrong>=1)")
 
-        self.lbl_stats = QLabel("-")
-        self.btn_refresh = QPushButton("새로고침")
+        self.cb_only_wrong = QCheckBox("자주 틀린 것만 (wrong ≥ 1)")
+        self.lbl_stats = theme.label("", role="muted")
+        self.btn_analyze = QPushButton("실수 분석 (Stockfish)")
         self.btn_review = QPushButton("실수 복습 시작")
-        self.btn_analyze = QPushButton("Stockfish로 실수 분석")
+        self.btn_review.setProperty("variant", "primary")
+
+        toolbar = theme.card(flat=True)
+        tool = QHBoxLayout(toolbar)
+        tool.setContentsMargins(14, 10, 14, 10)
+        tool.addWidget(QLabel("소스"))
+        tool.addWidget(self.cb_source)
+        tool.addWidget(self.cb_only_wrong)
+        tool.addStretch(1)
+        tool.addWidget(self.btn_analyze)
+        tool.addWidget(self.btn_review)
 
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
-            ["loss", "src", "내가 둔 수", "정답", "맞음", "틀림", "다음 복습"]
+            ["손실(loss)", "소스", "내가 둔 수", "엔진 정답", "맞음", "틀림", "다음 복습"]
         )
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
-
-        top = QHBoxLayout()
-        top.addWidget(QLabel("소스"))
-        top.addWidget(self.cb_source)
-        top.addWidget(self.cb_only_wrong)
-        top.addStretch(1)
-        top.addWidget(self.btn_refresh)
-        top.addWidget(self.btn_review)
-        top.addWidget(self.btn_analyze)
+        self.table.setShowGrid(False)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(top)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(14)
+        layout.addWidget(theme.label("내 실수", role="h1"))
+        layout.addWidget(
+            theme.label(
+                "엔진으로 내가 둔 수의 평가 손실을 재서 실수를 모으고, 그 실수를 간격 반복으로 복습한다.",
+                role="muted",
+            )
+        )
+        layout.addWidget(toolbar)
         layout.addWidget(self.lbl_stats)
         layout.addWidget(self.table, 1)
 
+        self.btn_refresh = QPushButton("새로고침")
+        self.btn_refresh.setProperty("variant", "ghost")
         self.btn_refresh.clicked.connect(self.refresh)
-        self.btn_review.clicked.connect(self._review)
         self.btn_analyze.clicked.connect(self._analyze)
+        self.btn_review.clicked.connect(self._review)
         self.cb_source.currentIndexChanged.connect(self.refresh)
         self.cb_only_wrong.stateChanged.connect(self.refresh)
         self.refresh()
@@ -87,7 +102,7 @@ class MistakesTab(QWidget):
         only_wrong = self.cb_only_wrong.isChecked()
         counts = db.mistake_counts(src)
         self.lbl_stats.setText(
-            f"전체 {counts['total']} · 지금 복습할 것(due) {counts['due']} · 아직 안 본 것 {counts['unreviewed']}"
+            f"전체 {counts['total']}  ·  지금 복습할 것(due) {counts['due']}  ·  아직 안 본 것 {counts['unreviewed']}"
         )
         rows = db.list_mistakes(source=src, only_wrong=only_wrong)
         self.table.setRowCount(0)
@@ -96,7 +111,7 @@ class MistakesTab(QWidget):
             self.table.insertRow(i)
             vals = [
                 f"{r['loss']:.2f}",
-                r["source"],
+                "봇" if r["source"] == "bot" else "사람",
                 r["my_san"],
                 r["best_san"],
                 str(r["correct"]),
@@ -136,6 +151,14 @@ class MistakesTab(QWidget):
         source = self.cb_source.currentData()
         if source == "both":
             source = cfg_mod.get(cfg, "mistakes.source", "human")
+        if not engine_mod.engine_available(cfg_mod.get(cfg, "stockfish.path", "")):
+            QMessageBox.warning(
+                self,
+                "실수 분석",
+                "설정 탭에서 stockfish.exe 경로를 먼저 지정하세요.\n"
+                "경로가 없으면 실수 분석은 꺼진 상태다.",
+            )
+            return
         if self._worker is not None and self._worker.isRunning():
             return
         self.btn_analyze.setEnabled(False)
@@ -148,7 +171,8 @@ class MistakesTab(QWidget):
 
     def _on_failed(self, msg: str) -> None:
         QMessageBox.warning(self, "실수 분석", msg)
+        self.refresh()
 
     def _on_analyzed(self, result: dict) -> None:
-        QMessageBox.information(self, "실수 분석", f"완료: {result}")
+        QMessageBox.information(self, "실수 분석", f"완료: 실수 {result.get('mistakes', 0)}개")
         self.refresh()

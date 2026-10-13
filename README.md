@@ -44,8 +44,10 @@ chess-brain/
 │   ├── engine.py     # Stockfish (선택)
 │   └── pipeline.py   # 동기화 → 문제 생성 → 실수 분석
 ├── ui/
-│   ├── main.py       # QMainWindow (탭)
-│   ├── widgets.py    # SAN 입력 복습 패널
+│   ├── main.py       # QMainWindow (사이드바 내비 + 헤더)
+│   ├── theme.py      # 다크 테마 QSS + 디자인 토큰
+│   ├── widgets.py    # SAN 입력 복습 패널/다이얼로그
+│   ├── worker.py     # 동기화·분석용 QThread
 │   └── tabs/         # home / mistakes / training / stats / settings
 ├── data/             # app.db (git 제외)
 ├── config/           # config.json, token.json (git 제외)
