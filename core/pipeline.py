@@ -91,6 +91,65 @@ def import_local_file(
     )
 
 
+def sync_local_folder(
+    cfg: Dict[str, Any],
+    on_progress: Progress = None,
+) -> Dict[str, int]:
+    """Scan a local folder and ingest every .pgn under it.
+
+    This is the *no-Google, no-cost* path: the user keeps PGNs in a local
+    folder with Bot/Human subfolders, and source is derived from those
+    folder names (same classifier the Drive path uses).
+    """
+    db.init_db()
+    root = cfg_mod.get(cfg, "local.pgn_folder", "") or ""
+    if not root or not os.path.isdir(root):
+        raise ValueError("설정에서 로컬 PGN 폴더를 먼저 지정하세요.")
+
+    _note(on_progress, f"스캔 중: {root}")
+    pgn_files = []
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for name in filenames:
+            if name.lower().endswith(".pgn"):
+                pgn_files.append(os.path.join(dirpath, name))
+    pgn_files.sort()
+
+    empty = {"files": 0, "games": 0, "new_games": 0, "lines": 0, "problems": 0}
+    if not pgn_files:
+        _note(on_progress, "찾은 .pgn 파일이 없습니다.")
+        return empty
+
+    _note(on_progress, f".pgn {len(pgn_files)}개 발견")
+    total = dict(empty)
+    for path in pgn_files:
+        rel = os.path.relpath(path, root)
+        parts = rel.split(os.sep)
+        # 하위폴더 이름 우선, 파일 이름의 힌트는 보조로 쓴다.
+        src = (
+            drive.classify_source(parts[:-1])
+            or drive.classify_source(parts)
+            or "human"
+        )
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        stats = ingest_pgn_text(
+            text,
+            src,
+            cfg,
+            file_id="local:" + os.path.abspath(path),
+            modified_time=str(int(os.path.getmtime(path))),
+        )
+        for k in total:
+            total[k] += stats.get(k, 0)
+        total["files"] += 1
+        _note(
+            on_progress,
+            f"완료: {os.path.basename(path)} ({src} / lines {stats['lines']})",
+        )
+    _note(on_progress, f"동기화 완료: {total}")
+    return total
+
+
 def sync_drive(cfg: Dict[str, Any], on_progress: Progress = None) -> Dict[str, int]:
     """Read the configured parent folder and ingest every .pgn found."""
     db.init_db()
