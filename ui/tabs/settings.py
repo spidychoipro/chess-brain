@@ -65,8 +65,38 @@ class SettingsTab(QWidget):
         cd = QVBoxLayout(card_drive)
         cd.setContentsMargins(18, 16, 18, 16)
         cd.setSpacing(10)
-        cd.addWidget(theme.label("구글드라이브 (읽기 전용)", role="h2"))
+        cd.addWidget(theme.label("구글드라이브 (선택·무료)", role="h2"))
         cd.addLayout(drive_form)
+
+        # -- local folder (API 없음 = 돈 안 듦) -------------------------------
+        self.in_local = QLineEdit()
+        self.in_local.setPlaceholderText("PGN 게임 폴더 (예: C:\\chess\\games)")
+        self.btn_browse_local = QPushButton("폴더 선택")
+        self.btn_browse_local.setProperty("variant", "ghost")
+        self.btn_browse_local.clicked.connect(self._browse_local)
+        self.lbl_local = theme.label(
+            "하위폴더 이름(Bot / Human)으로 봇전·사람전을 자동 구분. 구글·API·비용 없음.",
+            role="muted",
+        )
+        self.btn_local_sync = QPushButton("로컬 동기화")
+        self.btn_local_sync.setProperty("variant", "primary")
+        self.btn_local_sync.clicked.connect(self._sync_local)
+
+        local_row = QHBoxLayout()
+        local_row.addWidget(self.in_local, 1)
+        local_row.addWidget(self.btn_browse_local)
+        local_actions = QHBoxLayout()
+        local_actions.addWidget(self.btn_local_sync)
+        local_actions.addStretch(1)
+
+        card_local = theme.card()
+        cl = QVBoxLayout(card_local)
+        cl.setContentsMargins(18, 16, 18, 16)
+        cl.setSpacing(10)
+        cl.addWidget(theme.label("로컬 PGN 폴더 (무료·API 없음)", role="h2"))
+        cl.addWidget(self.lbl_local)
+        cl.addLayout(local_row)
+        cl.addLayout(local_actions)
 
         # -- stockfish -------------------------------------------------------
         self.in_stockfish = QLineEdit()
@@ -130,6 +160,7 @@ class SettingsTab(QWidget):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(14)
         layout.addWidget(theme.label("설정", role="h1"))
+        layout.addWidget(card_local)
         layout.addWidget(card_drive)
         layout.addWidget(card_sf)
         layout.addWidget(card_defaults)
@@ -148,6 +179,7 @@ class SettingsTab(QWidget):
         name = cfg_mod.get(c, "google_drive.parent_folder_name", "") or ""
         self.lbl_folder.setText(name or "-")
         self.in_stockfish.setText(cfg_mod.get(c, "stockfish.path", "") or "")
+        self.in_local.setText(cfg_mod.get(c, "local.pgn_folder", "") or "")
         self.sp_depth.setValue(int(cfg_mod.get(c, "stockfish.depth", 12) or 12))
         self.sp_threshold.setValue(float(cfg_mod.get(c, "mistakes.loss_threshold", 0.80) or 0.80))
         idx = self.cb_source.findData(cfg_mod.get(c, "training.default_source", "bot"))
@@ -159,6 +191,7 @@ class SettingsTab(QWidget):
         self.cfg = cfg_mod.load_config()
         cfg_mod.set_(self.cfg, "chesscom.username", self.in_username.text().strip())
         cfg_mod.set_(self.cfg, "google_drive.parent_folder_id", self.in_parent.text().strip())
+        cfg_mod.set_(self.cfg, "local.pgn_folder", self.in_local.text().strip())
         cfg_mod.set_(self.cfg, "stockfish.path", self.in_stockfish.text().strip())
         cfg_mod.set_(self.cfg, "stockfish.depth", int(self.sp_depth.value()))
         cfg_mod.set_(self.cfg, "mistakes.loss_threshold", float(self.sp_threshold.value()))
@@ -218,6 +251,28 @@ class SettingsTab(QWidget):
         )
         if path:
             self.in_stockfish.setText(path)
+
+    def _browse_local(self) -> None:
+        path = QFileDialog.getExistingDirectory(self, "PGN 게임 폴더 선택")
+        if path:
+            self.in_local.setText(path)
+            self._save()
+
+    def _sync_local(self) -> None:
+        self._save()
+        if not self.in_local.text().strip():
+            self._log("먼저 로컬 PGN 폴더를 선택하세요.")
+            return
+        if self._worker is not None and self._worker.isRunning():
+            self._log("이미 작업이 실행 중입니다.")
+            return
+        self._worker = PipelineWorker(pipeline.sync_local_folder, cfg=self.cfg)
+        self._worker.message.connect(self._log)
+        self._worker.done.connect(self._on_done)
+        self._worker.failed.connect(lambda e: self._log(f"실패: {e}"))
+        self.btn_local_sync.setEnabled(False)
+        self._worker.finished.connect(lambda: self.btn_local_sync.setEnabled(True))
+        self._worker.start()
 
     def _sync(self) -> None:
         self._save()
