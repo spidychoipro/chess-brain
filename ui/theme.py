@@ -201,6 +201,10 @@ QPlainTextEdit {{
     color: {MUTED};
 }}
 
+QScrollArea {{ background: transparent; border: none; }}
+QScrollArea > QWidget > QWidget {{ background: transparent; }}
+QWidget#SettingsContent {{ background: transparent; }}
+
 QCheckBox {{ spacing: 8px; color: {MUTED}; }}
 QCheckBox::indicator {{
     width: 16px; height: 16px;
