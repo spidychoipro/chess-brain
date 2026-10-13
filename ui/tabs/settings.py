@@ -8,10 +8,12 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -156,10 +158,12 @@ class SettingsTab(QWidget):
         self.log.setPlaceholderText("동기화/분석 로그")
         self.log.setMinimumHeight(140)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
+        # 긴 설정 폼이 작은 창에서 잘리지 않도록 스크롤 영역으로 감싼다
+        content = QWidget()
+        content.setObjectName("SettingsContent")
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 8, 0)
         layout.setSpacing(14)
-        layout.addWidget(theme.label("설정", role="h1"))
         layout.addWidget(card_local)
         layout.addWidget(card_drive)
         layout.addWidget(card_sf)
@@ -167,6 +171,17 @@ class SettingsTab(QWidget):
         layout.addWidget(self.btn_save)
         layout.addWidget(theme.label("로그", role="caption"))
         layout.addWidget(self.log, 1)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidget(content)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(24, 20, 16, 20)
+        outer.setSpacing(14)
+        outer.addWidget(theme.label("설정", role="h1"))
+        outer.addWidget(scroll, 1)
 
         self._load_into_widgets()
 
