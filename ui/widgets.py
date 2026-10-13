@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-import chess
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QDialog,
@@ -27,6 +26,9 @@ from ui import theme
 
 def _canonical_san(fen: str, user_input: str) -> Optional[str]:
     """Return the canonical SAN for the user's move, or None if illegal."""
+    # python-chess import 는 무겁다. SAN 입력 화면을 실제로 열 때만 로드.
+    import chess
+
     board = chess.Board(fen)
     try:
         move = board.parse_san(user_input.strip())

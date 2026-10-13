@@ -4,7 +4,6 @@ Mistakes stay the first page - that is the point of the app.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -18,11 +17,6 @@ from PySide6.QtWidgets import (
 
 from core import db
 from ui import theme
-from ui.tabs.home import HomeTab
-from ui.tabs.mistakes import MistakesTab
-from ui.tabs.settings import SettingsTab
-from ui.tabs.stats import StatsTab
-from ui.tabs.training import TrainingTab
 
 PAGES = [
     ("♟  내 실수", "mistakes"),
@@ -32,12 +26,29 @@ PAGES = [
     ("⚙  설정", "settings"),
 ]
 
+# 탭 클래스는 첫 방문 때 만들어서 시작 부하를 줄인다.
+def _tab_classes():
+    from ui.tabs.home import HomeTab
+    from ui.tabs.mistakes import MistakesTab
+    from ui.tabs.settings import SettingsTab
+    from ui.tabs.stats import StatsTab
+    from ui.tabs.training import TrainingTab
+
+    return {
+        "mistakes": MistakesTab,
+        "training": TrainingTab,
+        "home": HomeTab,
+        "stats": StatsTab,
+        "settings": SettingsTab,
+    }
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("chess-brain")
         self.resize(1080, 680)
+        self._pages = {}
 
         db.init_db()
 
@@ -79,13 +90,6 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.btn_refresh)
 
         self.stack = QStackedWidget()
-        self.mistakes = MistakesTab()
-        self.training = TrainingTab()
-        self.home = HomeTab()
-        self.stats = StatsTab()
-        self.settings = SettingsTab()
-        for page in (self.mistakes, self.training, self.home, self.stats, self.settings):
-            self.stack.addWidget(page)
 
         right_layout.addWidget(header)
         right_layout.addWidget(self.stack, 1)
@@ -95,14 +99,25 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
 
         self.nav.currentRowChanged.connect(self._on_nav)
-        self.settings.config_saved.connect(self._refresh_all)
         self.nav.setCurrentRow(0)
+
+    # -- pages (lazy) -------------------------------------------------------
+
+    def _page(self, key: str) -> QWidget:
+        if key not in self._pages:
+            page = _tab_classes()[key]()
+            self._pages[key] = page
+            self.stack.addWidget(page)
+            if key == "settings":
+                page.config_saved.connect(self._refresh_all)
+        return self._pages[key]
 
     # -- behavior -----------------------------------------------------------
 
     def _on_nav(self, index: int) -> None:
-        self.stack.setCurrentIndex(index)
-        page = self.stack.widget(index)
+        key = PAGES[index][1]
+        page = self._page(key)
+        self.stack.setCurrentWidget(page)
         if hasattr(page, "refresh"):
             page.refresh()
         self._update_sub()
@@ -115,7 +130,7 @@ class MainWindow(QMainWindow):
         )
 
     def _refresh_all(self) -> None:
-        for page in (self.mistakes, self.training, self.home, self.stats, self.settings):
+        for page in self._pages.values():
             if hasattr(page, "refresh"):
                 page.refresh()
         self._update_sub()

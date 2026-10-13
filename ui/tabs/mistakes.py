@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from core import config as cfg_mod
-from core import db, engine as engine_mod, pipeline
+from core import db
 from ui import theme
 from ui.widgets import ReviewDialog
 from ui.worker import PipelineWorker
@@ -147,6 +147,9 @@ class MistakesTab(QWidget):
         self.refresh()
 
     def _analyze(self) -> None:
+        from core import engine as engine_mod
+        from core import pipeline
+
         cfg = self._cfg()
         source = self.cb_source.currentData()
         if source == "both":

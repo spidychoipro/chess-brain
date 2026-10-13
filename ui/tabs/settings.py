@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from core import config as cfg_mod
-from core import drive, pipeline
+from core import drive
 from core.utils import config_dir
 from ui import theme
 from ui.worker import PipelineWorker
@@ -274,6 +274,8 @@ class SettingsTab(QWidget):
             self._save()
 
     def _sync_local(self) -> None:
+        from core import pipeline
+
         self._save()
         if not self.in_local.text().strip():
             self._log("먼저 로컬 PGN 폴더를 선택하세요.")
@@ -290,6 +292,8 @@ class SettingsTab(QWidget):
         self._worker.start()
 
     def _sync(self) -> None:
+        from core import pipeline
+
         self._save()
         if self._worker is not None and self._worker.isRunning():
             self._log("이미 작업이 실행 중입니다.")
