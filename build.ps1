@@ -13,7 +13,16 @@ Write-Host "== PyInstaller 설치 =="
 if ($LASTEXITCODE -ne 0) { throw "pyinstaller 설치 실패" }
 
 Write-Host "== 빌드 =="
-& $py -m PyInstaller --noconfirm --clean --onefile --windowed --name chess-brain main.py
+& $py -m PyInstaller --noconfirm --clean --onefile --windowed --name chess-brain `
+    --hidden-import googleapiclient `
+    --hidden-import googleapiclient.discovery `
+    --hidden-import googleapiclient.http `
+    --hidden-import google_auth_oauthlib `
+    --hidden-import google_auth_oauthlib.flow `
+    --hidden-import google.auth `
+    --hidden-import google.auth.transport `
+    --hidden-import google.auth.transport.requests `
+    main.py
 if ($LASTEXITCODE -ne 0) { throw "빌드 실패" }
 
 if (Test-Path "dist\chess-brain.exe") {

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from core import config as cfg_mod
 from core import drive, pipeline
+from core.utils import config_dir
 from ui import theme
 from ui.worker import PipelineWorker
 
@@ -179,6 +180,16 @@ class SettingsTab(QWidget):
         try:
             drive.build_service(interactive=True)
             self._log("구글 인증 완료. config/token.json 생성됨.")
+        except ModuleNotFoundError as exc:
+            self._log(
+                f"구글 드라이브 라이브러리가 없음: {exc}\n"
+                "pip install -r requirements.txt 후 exe 재빌드(build.ps1) 필요."
+            )
+        except FileNotFoundError as exc:
+            self._log(
+                f"{exc}\n"
+                f"credentials.json 은 여기 둬야 함: {config_dir() / 'credentials.json'}"
+            )
         except Exception as exc:
             self._log(f"인증 실패: {exc}")
 
