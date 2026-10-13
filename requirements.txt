@@ -1,0 +1,10 @@
+python-chess>=1.11
+PySide6>=6.6
+
+# Google Drive (읽기 전용) - 선택
+google-api-python-client>=2.100
+google-auth-oauthlib>=1.2
+google-auth-httplib2>=0.2
+
+# 단일 exe 로 묶고 싶을 때만
+# pyinstaller>=6.0
