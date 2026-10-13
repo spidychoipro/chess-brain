@@ -57,6 +57,34 @@ def credentials_path():
     return config_dir() / "credentials.json"
 
 
+def install_credentials(src_path: str):
+    """Copy an OAuth client JSON to config/credentials.json, validating first.
+
+    Lets the user pick the file they downloaded from Google Cloud Console
+    instead of having to find the config folder by hand.
+    """
+    import json
+    import shutil
+    from pathlib import Path
+
+    src = Path(src_path)
+    try:
+        data = json.loads(src.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"JSON 을 읽을 수 없음: {exc}") from exc
+
+    if "installed" not in data and "web" not in data:
+        raise ValueError(
+            "OAuth 클라이언트 JSON 이 아님. Google Cloud Console > "
+            "Credentials > OAuth client ID (Desktop app) 에서 받은 파일인지 확인."
+        )
+
+    dest = credentials_path()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dest)
+    return dest
+
+
 def build_service(interactive: bool = True):
     """Build a Drive v3 client, reusing config/token.json when possible."""
     from google.auth.transport.requests import Request

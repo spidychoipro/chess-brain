@@ -36,11 +36,23 @@ python main.py
 
 ### 방법 2: 구글드라이브 (선택·무료)
 
-1. **설정** 탭에서 chess.com 아이디(내가 둔 수 판별용), 구글드라이브 부모 폴더 ID/URL 을 넣는다.
-2. 구글 인증을 하려면 Google Cloud Console 에서 OAuth 클라이언트(데스크톱 앱)를 만들고 내려받은 json 을 `config/credentials.json` 으로 둔다. 그다음 **구글 인증** 버튼.
-3. **드라이브 동기화** 를 누르면 `.pgn` 을 읽어 문제를 만든다.
+드라이브 API 는 개인 읽기 용도로 무료다(결제 계정 불필요). 다만 처음 한 번 OAuth 클라이언트를 만들어야 한다.
 
-드라이브 API 는 개인 읽기 용도로 무료다(결제 계정 불필요). 단, OAuth 클라이언트 만들기가 번거로우면 방법 1을 쓰면 된다.
+**1. credentials.json 만들기 (최초 1회)**
+
+1. [console.cloud.google.com](https://console.cloud.google.com) 에서 프로젝트를 하나 만든다.
+2. **APIs & Services → Library** 에서 `Google Drive API` 를 찾아 **사용 설정(Enable)**.
+3. **APIs & Services → OAuth consent screen** → User type **External** 로 만들고, 앱 이름/이메일 아무거나 넣는다. **Test users** 에 내 구글 계정을 추가한다. (테스트 모드라 여기에 없으면 로그인이 막힌다.)
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID** → Application type **Desktop app** → 만들면 JSON 이 바로 내려받아진다.
+5. 앱 **설정** 탭 → 구글드라이브 카드의 **credentials.json 선택** 버튼으로 방금 받은 JSON 을 고른다. (파일을 config 폴더에 직접 넣어도 되고, 위치는 `config/credentials.json` 이다.)
+
+**2. 동기화**
+
+6. **설정** 탭에서 chess.com 아이디(내가 둔 수 판별용)와 구글드라이브 부모 폴더 ID/URL 을 넣는다.
+7. **구글 인증** 을 누르면 브라우저가 열리고, 로그인하면 `config/token.json` 이 생긴다.
+8. **드라이브 동기화** 를 누르면 `.pgn` 을 읽어 문제를 만든다.
+
+OAuth 클라이언트 만들기가 번거로우면 방법 1(로컬 폴더)을 쓰면 된다.
 
 ## 구조
 

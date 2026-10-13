@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
 
 from core import config as cfg_mod
 from core import drive
-from core.utils import config_dir
 from ui import theme
 from ui.worker import PipelineWorker
 
@@ -41,6 +40,9 @@ class SettingsTab(QWidget):
         self.in_parent.setPlaceholderText("구글드라이브 부모 폴더 ID 또는 공유 URL")
 
         self.lbl_folder = theme.label("-", role="muted")
+        self.btn_cred = QPushButton("credentials.json 선택")
+        self.btn_cred.setProperty("variant", "ghost")
+        self.btn_cred.clicked.connect(self._pick_credentials)
         self.btn_auth = QPushButton("구글 인증 (브라우저)")
         self.btn_auth.setProperty("variant", "ghost")
         self.btn_auth.clicked.connect(self._authorize)
@@ -52,6 +54,7 @@ class SettingsTab(QWidget):
         self.btn_sync.clicked.connect(self._sync)
 
         drive_actions = QHBoxLayout()
+        drive_actions.addWidget(self.btn_cred)
         drive_actions.addWidget(self.btn_auth)
         drive_actions.addWidget(self.btn_check)
         drive_actions.addWidget(self.btn_sync)
@@ -63,12 +66,20 @@ class SettingsTab(QWidget):
         drive_form.addRow(theme.label("폴더 상태", role="muted"), self.lbl_folder)
         drive_form.addRow("", drive_actions)
 
+        self.lbl_drive_help = theme.label(
+            "처음 한 번: Google Cloud Console 에서 OAuth 클라이언트(데스크톱 앱)를 만들어 "
+            "받은 json 을 위 'credentials.json 선택' 으로 고르면 됨. 그다음 '구글 인증'.",
+            role="muted",
+        )
+        self.lbl_drive_help.setWordWrap(True)
+
         card_drive = theme.card()
         cd = QVBoxLayout(card_drive)
         cd.setContentsMargins(18, 16, 18, 16)
         cd.setSpacing(10)
         cd.addWidget(theme.label("구글드라이브 (선택·무료)", role="h2"))
         cd.addLayout(drive_form)
+        cd.addWidget(self.lbl_drive_help)
 
         # -- local folder (API 없음 = 돈 안 듦) -------------------------------
         self.in_local = QLineEdit()
@@ -224,6 +235,30 @@ class SettingsTab(QWidget):
     def _log(self, msg: str) -> None:
         self.log.appendPlainText(msg)
 
+    _CRED_STEPS = (
+        "credentials.json 이 없음. 드라이브를 쓰려면 처음 한 번만 만들면 됨:\n"
+        "1) console.cloud.google.com 에서 프로젝트 생성\n"
+        "2) APIs & Services > Library 에서 'Google Drive API' 사용 설정\n"
+        "3) OAuth consent screen > External 로 만들고, Test users 에 본인 구글 계정 추가\n"
+        "4) Credentials > Create credentials > OAuth client ID > Application type: Desktop app\n"
+        "5) 만들면 JSON 이 내려받아짐 → 여기서 'credentials.json 선택' 으로 그 파일 고르기\n"
+        "6) '구글 인증' 누르고 브라우저 로그인"
+    )
+
+    def _pick_credentials(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "credentials.json 선택 (OAuth 클라이언트 JSON)", "", "JSON (*.json);;모든 파일 (*)"
+        )
+        if not path:
+            return
+        try:
+            dest = drive.install_credentials(path)
+        except Exception as exc:  # noqa: BLE001
+            self._log(f"credentials.json 저장 실패: {exc}")
+            return
+        self._log(f"credentials.json 저장됨: {dest}")
+        self._log("이제 '구글 인증' 을 누르면 브라우저가 열림.")
+
     def _authorize(self) -> None:
         try:
             drive.build_service(interactive=True)
@@ -233,11 +268,8 @@ class SettingsTab(QWidget):
                 f"구글 드라이브 라이브러리가 없음: {exc}\n"
                 "pip install -r requirements.txt 후 exe 재빌드(build.ps1) 필요."
             )
-        except FileNotFoundError as exc:
-            self._log(
-                f"{exc}\n"
-                f"credentials.json 은 여기 둬야 함: {config_dir() / 'credentials.json'}"
-            )
+        except FileNotFoundError:
+            self._log(self._CRED_STEPS)
         except Exception as exc:
             self._log(f"인증 실패: {exc}")
 
@@ -301,10 +333,17 @@ class SettingsTab(QWidget):
         self._worker = PipelineWorker(pipeline.sync_drive, cfg=self.cfg)
         self._worker.message.connect(self._log)
         self._worker.done.connect(self._on_done)
-        self._worker.failed.connect(lambda e: self._log(f"실패: {e}"))
+        self._worker.failed.connect(self._on_sync_failed)
         self.btn_sync.setEnabled(False)
         self._worker.finished.connect(lambda: self.btn_sync.setEnabled(True))
         self._worker.start()
+
+    def _on_sync_failed(self, err: str) -> None:
+        # 자격증명이 없어서 실패한 경우엔 다음에 뭘 할지까지 보여준다.
+        if "credentials.json" in err:
+            self._log(self._CRED_STEPS)
+            return
+        self._log(f"실패: {err}")
 
     def _on_done(self, result: dict) -> None:
         self._log(f"완료: {result}")
