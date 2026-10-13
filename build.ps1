@@ -37,7 +37,7 @@ if (Test-Path "dist\chess-brain.exe") {
     while (-not (Test-Path $marker) -and (Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 500
     }
-    if (Test-Path $marker -and $proc.ExitCode -eq 0) {
+    if ((Test-Path $marker) -and ($proc.ExitCode -eq 0)) {
         Write-Host "셀프테스트 통과"
     } else {
         throw "셀프테스트 실패: 마커 없음 (exit=$($proc.ExitCode))"
