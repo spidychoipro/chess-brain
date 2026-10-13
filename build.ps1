@@ -23,6 +23,20 @@ Write-Host "== 빌드 =="
     --hidden-import google.auth `
     --hidden-import google.auth.transport `
     --hidden-import google.auth.transport.requests `
+    --exclude-module tkinter `
+    --exclude-module unittest `
+    --exclude-module test `
+    --exclude-module lib2to3 `
+    --exclude-module curses `
+    --exclude-module turtledemo `
+    --exclude-module turtle `
+    --exclude-module idlelib `
+    --exclude-module pydoc `
+    --exclude-module pydoc_data `
+    --exclude-module doctest `
+    --exclude-module ensurepip `
+    --exclude-module venv `
+    --exclude-module xmlrpc `
     main.py
 if ($LASTEXITCODE -ne 0) { throw "빌드 실패" }
 
