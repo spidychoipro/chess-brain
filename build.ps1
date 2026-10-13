@@ -14,6 +14,9 @@ Write-Host "== PyInstaller 설치 =="
 if ($LASTEXITCODE -ne 0) { throw "pyinstaller 설치 실패" }
 
 Write-Host "== 빌드 =="
+# 주의: unittest 는 절대 제외하지 말 것.
+#   googleapiclient -> httplib2 -> pyparsing -> pyparsing.testing 이 import 시점에
+#   unittest 를 끌어온다. 빼면 드라이브/로컬 동기화가 "No module named 'unittest'" 로 깨진다.
 & $py -m PyInstaller --noconfirm --clean --onedir --windowed --name chess-brain `
     --hidden-import googleapiclient `
     --hidden-import googleapiclient.discovery `
@@ -24,9 +27,9 @@ Write-Host "== 빌드 =="
     --hidden-import google.auth.transport `
     --hidden-import google.auth.transport.requests `
     --exclude-module tkinter `
-    --exclude-module unittest `
-    --exclude-module test `
     --exclude-module lib2to3 `
+    --exclude-module test `
+    --exclude-module curses `
     --exclude-module curses `
     --exclude-module turtledemo `
     --exclude-module turtle `
@@ -53,10 +56,16 @@ if (Test-Path $exe) {
     while (-not (Test-Path $marker) -and (Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 500
     }
-    if ((Test-Path $marker) -and ($proc.ExitCode -eq 0)) {
-        Write-Host "셀프테스트 통과"
+    $content = ""
+    if (Test-Path $marker) {
+        $content = (Get-Content $marker -Raw -ErrorAction SilentlyContinue)
+    }
+    # 마커 존재만이 아니라 drive=True 까지 확인한다.
+    # 구글 라이브러리 번들이 깨지면 drive=False 로 찍히므로 빌드 단계에서 잡힌다.
+    if (($proc.ExitCode -eq 0) -and ($content -match "drive=True")) {
+        Write-Host "셀프테스트 통과 (drive=True)"
     } else {
-        throw "셀프테스트 실패: 마커 없음 (exit=$($proc.ExitCode))"
+        throw "셀프테스트 실패: 마커='$($content.Trim())' (exit=$($proc.ExitCode))"
     }
 } else {
     throw "$exe 가 생성되지 않음"
