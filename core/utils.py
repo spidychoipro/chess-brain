@@ -1,11 +1,20 @@
 """Shared paths and tiny helpers."""
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 
 
 def project_root() -> Path:
+    """Where data/ and config/ live.
+
+    Source run: the repo root. Frozen (PyInstaller) run: next to the exe,
+    so data/config stay persistent instead of evaporating from the temp
+    extraction dir.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
 
 
