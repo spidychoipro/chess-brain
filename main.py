@@ -12,6 +12,19 @@ from __future__ import annotations
 import sys
 
 
+def _drive_ready() -> bool:
+    """Whether the Google Drive client libs made it into this build."""
+    try:
+        import google.auth  # noqa: F401
+        import google.auth.transport.requests  # noqa: F401
+        import google_auth_oauthlib.flow  # noqa: F401
+        import googleapiclient.discovery  # noqa: F401
+        import googleapiclient.http  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def _selftest() -> int:
     """Offscreen launch check for packaged builds.
 
@@ -48,10 +61,11 @@ def _selftest() -> int:
 
     QTimer.singleShot(1500, app.quit)
     app.exec()
+    drive_ok = _drive_ready()
     marker = Path(tempfile.gettempdir()) / "chess_brain_selftest_ok"
-    marker.write_text("ok", encoding="utf-8")
+    marker.write_text(f"ok drive={drive_ok}", encoding="utf-8")
     try:
-        print("selftest OK")
+        print(f"selftest OK  drive={drive_ok}")
     except Exception:
         pass
     return 0
