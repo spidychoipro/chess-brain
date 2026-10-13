@@ -1,4 +1,5 @@
-"""Settings tab: drive folder, Stockfish, thresholds, defaults."""
+"""Settings page: drive folder, Stockfish, thresholds, defaults."""
+
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
@@ -8,7 +9,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from core import config as cfg_mod
 from core import drive, pipeline
+from ui import theme
 from ui.worker import PipelineWorker
 
 
@@ -36,18 +37,46 @@ class SettingsTab(QWidget):
         self.in_parent = QLineEdit()
         self.in_parent.setPlaceholderText("구글드라이브 부모 폴더 ID 또는 공유 URL")
 
-        self.lbl_folder = QLabel("-")
-        self.btn_auth = QPushButton("구글 인증 (브라우저 열기)")
+        self.lbl_folder = theme.label("-", role="muted")
+        self.btn_auth = QPushButton("구글 인증 (브라우저)")
+        self.btn_auth.setProperty("variant", "ghost")
         self.btn_auth.clicked.connect(self._authorize)
         self.btn_check = QPushButton("폴더 확인")
+        self.btn_check.setProperty("variant", "ghost")
         self.btn_check.clicked.connect(self._check_folder)
-        self.btn_sync = QPushButton("드라이브 동기화 (PGN → 문제)")
+        self.btn_sync = QPushButton("드라이브 동기화")
+        self.btn_sync.setProperty("variant", "primary")
         self.btn_sync.clicked.connect(self._sync)
 
+        drive_actions = QHBoxLayout()
+        drive_actions.addWidget(self.btn_auth)
+        drive_actions.addWidget(self.btn_check)
+        drive_actions.addWidget(self.btn_sync)
+        drive_actions.addStretch(1)
+
+        drive_form = QFormLayout()
+        drive_form.addRow(theme.label("chess.com 아이디", role="muted"), self.in_username)
+        drive_form.addRow(theme.label("부모 폴더", role="muted"), self.in_parent)
+        drive_form.addRow(theme.label("폴더 상태", role="muted"), self.lbl_folder)
+        drive_form.addRow("", drive_actions)
+
+        card_drive = theme.card()
+        cd = QVBoxLayout(card_drive)
+        cd.setContentsMargins(18, 16, 18, 16)
+        cd.setSpacing(10)
+        cd.addWidget(theme.label("구글드라이브 (읽기 전용)", role="h2"))
+        cd.addLayout(drive_form)
+
+        # -- stockfish -------------------------------------------------------
         self.in_stockfish = QLineEdit()
         self.in_stockfish.setPlaceholderText("stockfish.exe 경로 (선택)")
         self.btn_browse_sf = QPushButton("찾아보기")
+        self.btn_browse_sf.setProperty("variant", "ghost")
         self.btn_browse_sf.clicked.connect(self._browse_stockfish)
+
+        sf_row = QHBoxLayout()
+        sf_row.addWidget(self.in_stockfish, 1)
+        sf_row.addWidget(self.btn_browse_sf)
 
         self.sp_depth = QSpinBox()
         self.sp_depth.setRange(4, 30)
@@ -56,46 +85,55 @@ class SettingsTab(QWidget):
         self.sp_threshold.setSingleStep(0.1)
         self.sp_threshold.setSuffix(" pawn")
 
+        sf_form = QFormLayout()
+        sf_form.addRow(theme.label("Stockfish 경로", role="muted"), sf_row)
+        sf_form.addRow(theme.label("분석 depth", role="muted"), self.sp_depth)
+        sf_form.addRow(theme.label("실수 임계값(loss)", role="muted"), self.sp_threshold)
+
+        card_sf = theme.card()
+        cs = QVBoxLayout(card_sf)
+        cs.setContentsMargins(18, 16, 18, 16)
+        cs.setSpacing(10)
+        cs.addWidget(theme.label("Stockfish (옵션)", role="h2"))
+        cs.addLayout(sf_form)
+
+        # -- defaults --------------------------------------------------------
         self.cb_source = QComboBox()
         self.cb_source.addItem("Bot", "bot")
         self.cb_source.addItem("Human", "human")
         self.cb_source.addItem("Both", "both")
-
         self.cb_mode = QComboBox()
         self.cb_mode.addItem("다음 수 맞추기 (Recall)", "recall")
         self.cb_mode.addItem("노테이션 연습 (Drill)", "drill")
 
-        self.btn_save = QPushButton("저장")
+        df = QFormLayout()
+        df.addRow(theme.label("트레이닝 기본 소스", role="muted"), self.cb_source)
+        df.addRow(theme.label("트레이닝 기본 모드", role="muted"), self.cb_mode)
+
+        card_defaults = theme.card()
+        cd2 = QVBoxLayout(card_defaults)
+        cd2.setContentsMargins(18, 16, 18, 16)
+        cd2.setSpacing(10)
+        cd2.addWidget(theme.label("기본값", role="h2"))
+        cd2.addLayout(df)
+
+        self.btn_save = QPushButton("설정 저장")
+        self.btn_save.setProperty("variant", "primary")
         self.btn_save.clicked.connect(self._save)
 
         self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
         self.log.setPlaceholderText("동기화/분석 로그")
-
-        sf_row = QHBoxLayout()
-        sf_row.addWidget(self.in_stockfish, 1)
-        sf_row.addWidget(self.btn_browse_sf)
-
-        auth_row = QHBoxLayout()
-        auth_row.addWidget(self.btn_auth)
-        auth_row.addWidget(self.btn_check)
-        auth_row.addWidget(self.btn_sync)
-
-        form = QFormLayout()
-        form.addRow("chess.com 아이디", self.in_username)
-        form.addRow("드라이브 부모 폴더", self.in_parent)
-        form.addRow("폴더 상태", self.lbl_folder)
-        form.addRow("", auth_row)
-        form.addRow("Stockfish", sf_row)
-        form.addRow("분석 depth", self.sp_depth)
-        form.addRow("실수 임계값(loss)", self.sp_threshold)
-        form.addRow("트레이닝 기본 소스", self.cb_source)
-        form.addRow("트레이닝 기본 모드", self.cb_mode)
+        self.log.setMinimumHeight(140)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(14)
+        layout.addWidget(theme.label("설정", role="h1"))
+        layout.addWidget(card_drive)
+        layout.addWidget(card_sf)
+        layout.addWidget(card_defaults)
         layout.addWidget(self.btn_save)
-        layout.addWidget(QLabel("로그"))
+        layout.addWidget(theme.label("로그", role="caption"))
         layout.addWidget(self.log, 1)
 
         self._load_into_widgets()
@@ -164,19 +202,18 @@ class SettingsTab(QWidget):
             self._log(f"폴더 확인 실패: {exc}")
 
     def _browse_stockfish(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "stockfish.exe 선택", "", "실행 파일 (*.exe);;모든 파일 (*)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "stockfish.exe 선택", "", "실행 파일 (*.exe);;모든 파일 (*)"
+        )
         if path:
             self.in_stockfish.setText(path)
 
     def _sync(self) -> None:
         self._save()
-        self._run(pipeline.sync_drive, self.cfg)
-
-    def _run(self, fn, cfg) -> None:
         if self._worker is not None and self._worker.isRunning():
             self._log("이미 작업이 실행 중입니다.")
             return
-        self._worker = PipelineWorker(fn, cfg=cfg)
+        self._worker = PipelineWorker(pipeline.sync_drive, cfg=self.cfg)
         self._worker.message.connect(self._log)
         self._worker.done.connect(self._on_done)
         self._worker.failed.connect(lambda e: self._log(f"실패: {e}"))

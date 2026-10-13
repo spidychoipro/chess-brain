@@ -1,4 +1,4 @@
-"""Sub tab: 기보 시각화 트레이닝.
+"""Sub page: 기보 시각화 트레이닝.
 
 Two modes over the same data:
   * Recall - keep the lines flowing, soft weighting.
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from core import config as cfg_mod
 from core import db
+from ui import theme
 from ui.widgets import ReviewDialog
 
 
@@ -36,36 +37,48 @@ class TrainingTab(QWidget):
         self.cb_source.addItem("Human", "human")
         self.cb_source.addItem("Both", "both")
 
-        self.cb_only_wrong = QCheckBox("자주 틀린 것만 (wrong>=1)")
-        self.lbl_stats = QLabel("-")
+        self.cb_only_wrong = QCheckBox("자주 틀린 것만 (wrong ≥ 1)")
+        self.lbl_stats = theme.label("", role="muted")
         self.btn_start = QPushButton("시작")
+        self.btn_start.setProperty("variant", "primary")
+        self.btn_start.clicked.connect(self._start)
 
-        top = QHBoxLayout()
-        top.addWidget(QLabel("모드"))
-        top.addWidget(self.cb_mode)
-        top.addWidget(QLabel("소스"))
-        top.addWidget(self.cb_source)
-        top.addWidget(self.cb_only_wrong)
-        top.addStretch(1)
-        top.addWidget(self.btn_start)
+        toolbar = theme.card(flat=True)
+        tool = QHBoxLayout(toolbar)
+        tool.setContentsMargins(14, 10, 14, 10)
+        tool.addWidget(QLabel("모드"))
+        tool.addWidget(self.cb_mode)
+        tool.addWidget(QLabel("소스"))
+        tool.addWidget(self.cb_source)
+        tool.addWidget(self.cb_only_wrong)
+        tool.addStretch(1)
+        tool.addWidget(self.btn_start)
 
-        hint = QLabel(
-            "보드 없이 기보만 보고 다음 수를 SAN 으로 입력한다. "
-            "오답이면 정답을 보여주고 곧바로 같은 문제를 다시 낸다."
-        )
-        hint.setWordWrap(True)
+        desc = theme.card()
+        dlay = QVBoxLayout(desc)
+        dlay.setContentsMargins(18, 16, 18, 16)
+        dlay.setSpacing(8)
+        dlay.addWidget(theme.label("보드 없이 기보만 보고 다음 수를 떠올린다", role="h2"))
+        for line in [
+            "- 앞부분 기보를 보여주고, 다음 수를 SAN 으로 직접 입력한다. 보드·자동완성은 의도적으로 없다.",
+            "- 정답 → 잠깐 피드백 후 다음 문제. 오답 → 정답을 보여주고, 같은 문제를 곧바로 다시 낸다.",
+            "- Drill 모드는 자주 틀린 문제와 실수에서 파생된 문제를 더 자주 뽑는다.",
+        ]:
+            dlay.addWidget(theme.label(line, role="muted"))
 
         layout = QVBoxLayout(self)
-        layout.addLayout(top)
-        layout.addWidget(hint)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(14)
+        layout.addWidget(theme.label("기보 시각화 트레이닝", role="h1"))
+        layout.addWidget(toolbar)
         layout.addWidget(self.lbl_stats)
+        layout.addWidget(desc)
         layout.addStretch(1)
 
-        self.btn_start.clicked.connect(self._start)
         self.cb_mode.currentIndexChanged.connect(self.refresh)
         self.cb_source.currentIndexChanged.connect(self.refresh)
+        self.cb_only_wrong.stateChanged.connect(self.refresh)
 
-        # 설정 기본값 반영
         idx = self.cb_mode.findData(cfg_mod.get(cfg, "training.default_mode", "recall"))
         self.cb_mode.setCurrentIndex(idx if idx >= 0 else 0)
         idx = self.cb_source.findData(cfg_mod.get(cfg, "training.default_source", "bot"))
@@ -78,7 +91,9 @@ class TrainingTab(QWidget):
 
     def refresh(self) -> None:
         counts = db.problem_counts(self._src())
-        self.lbl_stats.setText(f"문제 {counts['total']}개 · 지금 복습할 것(due) {counts['due']}개")
+        self.lbl_stats.setText(
+            f"문제 {counts['total']}개  ·  지금 복습할 것(due) {counts['due']}개"
+        )
 
     def _start(self) -> None:
         mode = self.cb_mode.currentData()

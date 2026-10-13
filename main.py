@@ -18,12 +18,14 @@ def main() -> int:
         return 1
 
     from core import db
+    from ui import theme
     from ui.main import MainWindow
 
     db.init_db()
 
     app = QApplication(sys.argv)
     app.setApplicationName("chess-brain")
+    theme.apply(app)
     window = MainWindow()
     window.show()
     return app.exec()
