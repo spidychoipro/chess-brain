@@ -39,6 +39,7 @@ LEGAL = QColor(20, 20, 20, 55)
 LEGAL_CAP = QColor(20, 20, 20, 80)
 HINT = QColor(80, 200, 120, 120)
 WRONG = QColor(230, 90, 90, 120)
+GLOW = QColor(91, 140, 255, 165)
 WHITE_FILL = QColor("#fbfbfb")
 WHITE_LINE = QColor("#2f2f2f")
 BLACK_FILL = QColor("#2a2a2a")
@@ -50,6 +51,8 @@ class ChessBoard(QWidget):
 
     moveMade = Signal(str)       # 정답 판정용: canonical SAN
     movePlayedUci = Signal(str)  # 표시용: UCI (예: e2e4e5? promotion 포함)
+    squarePicked = Signal(int)   # 칸 하나 고르기 모드(칸 이름 퀴즈)
+    picked = Signal(int, int)    # 칸 두 개 고르기 모드(머릿속 보드)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -60,6 +63,11 @@ class ChessBoard(QWidget):
         self._legal_targets: List[int] = []
         self._hint: Optional[Tuple[int, int]] = None
         self._wrong: Optional[Tuple[int, int]] = None
+        # 노테이션 훈련용: 규칙 없이 칸만 고르는 모드, 기물 숨기기, 칸 강조.
+        self._pick_mode = False
+        self._hide_pieces = False
+        self._picks: List[int] = []
+        self._glow: Optional[int] = None
         self.setMinimumSize(340, 340)
 
     # -- api ---------------------------------------------------------------
@@ -105,6 +113,30 @@ class ChessBoard(QWidget):
         self._wrong = None
         self.update()
 
+    # -- 노테이션 훈련용 api -------------------------------------------------
+
+    def set_pick_mode(self, on: bool) -> None:
+        """체스 규칙 없이 칸만 고른다. 칸 이름 퀴즈, 머릿속 보드에 쓴다."""
+        self._pick_mode = on
+        self._picks = []
+        self._selected = None
+        self._legal_targets = []
+        self.update()
+
+    def set_hide_pieces(self, on: bool) -> None:
+        """기물을 숨긴다. 머릿속 보드(기보만 보고 칸 짚기)용."""
+        self._hide_pieces = on
+        self.update()
+
+    def glow_square(self, sq: Optional[int]) -> None:
+        """칸 하나를 파랗게 강조한다."""
+        self._glow = sq
+        self.update()
+
+    def clear_picks(self) -> None:
+        self._picks = []
+        self.update()
+
     # -- geometry ----------------------------------------------------------
 
     def _square_size(self) -> float:
@@ -147,6 +179,11 @@ class ChessBoard(QWidget):
             for col in range(8):
                 rect = QRectF(ox + col * s, oy + row * s, s, s)
                 p.fillRect(rect, LIGHT if (row + col) % 2 == 0 else DARK)
+
+        if self._glow is not None:
+            p.fillRect(self._sq_rect(self._glow), GLOW)
+        for sq in self._picks:
+            p.fillRect(self._sq_rect(sq), SELECTED)
 
         if self._selected is not None:
             p.fillRect(self._sq_rect(self._selected), SELECTED)
@@ -199,6 +236,8 @@ class ChessBoard(QWidget):
             )
 
     def _draw_pieces(self, p: QPainter, s: float) -> None:
+        if self._hide_pieces:
+            return
         # 주의: Segoe UI Symbol 같은 'symbol' 폰트는 QPainterPath.addText 로는
         # 글리프가 안 나온다(빈 path). 그래서 일반 텍스트 경로(drawText)로 그린다.
         font = QFont("Segoe UI Symbol")
@@ -265,6 +304,9 @@ class ChessBoard(QWidget):
         sq = self._point_square(event.position())
         if sq is None:
             return
+        if self._pick_mode:
+            self._on_pick(sq)
+            return
         if self._selected is not None and sq in self._legal_targets:
             self._try_move(self._selected, sq)
             return
@@ -301,6 +343,22 @@ class ChessBoard(QWidget):
         self.update()
         self.movePlayedUci.emit(move.uci())
         self.moveMade.emit(san)
+
+    def _on_pick(self, sq: int) -> None:
+        # 칸 하나 고르기(칸 이름 퀴즈)에는 매 클릭을 알려준다.
+        self.squarePicked.emit(sq)
+        # 칸 두 개 고르기(머릿속 보드): 첫 칸 → 둘째 칸.
+        if not self._picks:
+            self._picks = [sq]
+        elif sq == self._picks[0]:
+            self._picks = []
+        else:
+            frm, to = self._picks[0], sq
+            self._picks = []
+            self.update()
+            self.picked.emit(frm, to)
+            return
+        self.update()
 
     def _ask_promotion(self, to: int) -> Optional[int]:
         rect = self._sq_rect(to)
