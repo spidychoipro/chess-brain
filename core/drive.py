@@ -85,8 +85,12 @@ def install_credentials(src_path: str):
     return dest
 
 
-def build_service(interactive: bool = True):
-    """Build a Drive v3 client, reusing config/token.json when possible."""
+def build_service(interactive: bool = True, api_key: Optional[str] = None):
+    """Build a Drive v3 client.
+
+    우선순위: 저장된 OAuth 토큰(비공개 접근) → API 키(링크 공유 폴더, 로그인 불필요)
+    → 대화형 OAuth 로그인. API 키 방식은 구글 로그인 창을 띄우지 않는다.
+    """
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -102,25 +106,43 @@ def build_service(interactive: bool = True):
 
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
-    else:
-        if not interactive:
-            return None
-        cp = credentials_path()
-        if not cp.exists():
-            raise FileNotFoundError(
-                "config/credentials.json 이 필요합니다. "
-                "Google Cloud Console 에서 OAuth 클라이언트(데스크톱 앱)를 만들어 "
-                "내려받은 뒤 config/credentials.json 으로 저장하세요."
-            )
-        flow = InstalledAppFlow.from_client_secrets_file(str(cp), SCOPES)
-        creds = flow.run_local_server(port=0)
+        tp.write_text(creds.to_json(), encoding="utf-8")
+        return build("drive", "v3", credentials=creds, cache_discovery=False)
 
+    if api_key is None:
+        api_key = configured_api_key()
+    if api_key:
+        return build("drive", "v3", developerKey=api_key, cache_discovery=False)
+
+    if not interactive:
+        return None
+
+    cp = credentials_path()
+    if not cp.exists():
+        raise FileNotFoundError(
+            "config/credentials.json 이 필요합니다. "
+            "Google Cloud Console 에서 OAuth 클라이언트(데스크톱 앱)를 만들어 "
+            "내려받은 뒤 config/credentials.json 으로 저장하세요."
+        )
+    flow = InstalledAppFlow.from_client_secrets_file(str(cp), SCOPES)
+    creds = flow.run_local_server(port=0)
     tp.write_text(creds.to_json(), encoding="utf-8")
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
+def configured_api_key() -> str:
+    """config 의 google_drive.api_key (없으면 빈 문자열)."""
+    try:
+        from core import config as cfg_mod
+
+        cfg = cfg_mod.load_config()
+        return (cfg_mod.get(cfg, "google_drive.api_key", "") or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def is_authorized() -> bool:
-    return token_path().exists()
+    return token_path().exists() or bool(configured_api_key())
 
 
 def get_folder(service, folder_id: str) -> Optional[dict]:
@@ -202,6 +224,21 @@ def read_text(service, file_id: str) -> str:
     while not done:
         _, done = downloader.next_chunk()
     return buf.getvalue().decode("utf-8", errors="replace")
+
+
+def download_to(service, file_id: str, dest_path: str) -> None:
+    """Stream a Drive file straight to ``dest_path`` (부모 폴더는 자동 생성)."""
+    from googleapiclient.http import MediaIoBaseDownload
+    from pathlib import Path
+
+    dest = Path(dest_path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+    with dest.open("wb") as fh:
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
 
 
 def list_child_folders(service, parent_id: str) -> List[dict]:

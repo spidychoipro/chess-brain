@@ -20,6 +20,12 @@ DEFAULTS: Dict[str, Any] = {
     "google_drive": {
         "parent_folder_id": "",
         "parent_folder_name": "",
+        # 폴더를 '링크가 있는 모든 사용자'로 공유했을 때 쓰는 API 키.
+        # 있으면 구글 로그인(OAuth) 없이 바로 읽는다. (무료)
+        "api_key": "",
+    },
+    "local": {
+        "pgn_folder": "",        # 로컬 PGN 폴더 (드라이브에서 내려받을 위치)
     },
     "stockfish": {
         "path": "",

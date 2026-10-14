@@ -183,6 +183,54 @@ def sync_drive(cfg: Dict[str, Any], on_progress: Progress = None) -> Dict[str, i
     return total
 
 
+def pull_drive_to_local(cfg: Dict[str, Any], on_progress: Progress = None) -> Dict[str, int]:
+    """드라이브 부모 폴더의 .pgn 을 로컬 PGN 폴더로 내려받고, 이어서 로컬 동기화한다.
+
+    "드라이브 링크를 넣으면 그걸 로컬로 가져와서 쓴다" 는 경로. 로컬 폴더에
+    하위 구조(Bot / Human)를 그대로 만들어 저장하므로 이후에는 로컬 동기화만
+    돌려도 된다. 접근은 API 키(링크 공유 폴더) 또는 구글 인증(OAuth) 아무거나.
+    """
+    db.init_db()
+    root = cfg_mod.get(cfg, "local.pgn_folder", "") or ""
+    if not root:
+        raise ValueError(
+            "먼저 '로컬 PGN 폴더'를 지정하세요. 내려받은 PGN 을 여기에 저장합니다."
+        )
+    os.makedirs(root, exist_ok=True)
+
+    parent = cfg_mod.get(cfg, "google_drive.parent_folder_id", "")
+    if not parent:
+        raise ValueError("설정에서 구글드라이브 부모 폴더를 먼저 지정하세요.")
+
+    service = drive.build_service()
+    if service is None:
+        raise ValueError(
+            "드라이브 접근 자격이 없습니다. 'API 키' 를 넣거나 '구글 인증' 을 하세요."
+        )
+    parent_id = drive.resolve_folder_id(service, parent)
+
+    _note(on_progress, "드라이브에서 .pgn 찾는 중...")
+    files = drive.list_pgn_files(service, parent_id)
+    _note(on_progress, f"{len(files)}개 PGN → 로컬로 내려받기")
+
+    root_abs = os.path.abspath(root)
+    downloaded = 0
+    for i, f in enumerate(files, 1):
+        parts = [p for p in f.path_parts if p not in ("", ".", "..", "/", "\\")]
+        dest = os.path.join(root, *parts, f.name)
+        if not os.path.abspath(dest).startswith(root_abs):
+            _note(on_progress, f"건너뜀(경로 이상): {f.name}")
+            continue
+        drive.download_to(service, f.file_id, dest)
+        downloaded += 1
+        _note(on_progress, f"({i}/{len(files)}) 저장: {'/'.join(parts + [f.name])}")
+
+    _note(on_progress, f"{downloaded}개 저장 완료 → 로컬 동기화 시작")
+    stats = sync_local_folder(cfg, on_progress)
+    stats["downloaded"] = downloaded
+    return stats
+
+
 def analyze_mistakes(
     cfg: Dict[str, Any],
     source: str = "human",
