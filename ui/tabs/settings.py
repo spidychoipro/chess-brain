@@ -268,7 +268,7 @@ class SettingsTab(QWidget):
         self.cb_source.addItem("Both", "both")
         self.cb_mode = QComboBox()
         self.cb_mode.addItem("다음 수 맞추기 (Recall)", "recall")
-        self.cb_mode.addItem("노테이션 연습 (Drill)", "drill")
+        self.cb_mode.addItem("실수 집중 훈련 (Drill)", "drill")
 
         df = QFormLayout()
         df.addRow(theme.label("트레이닝 기본 소스", role="muted"), self.cb_source)

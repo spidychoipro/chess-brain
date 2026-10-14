@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import time
 
+import chess
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -24,7 +26,8 @@ from PySide6.QtWidgets import (
 from core import config as cfg_mod
 from core import db
 from ui import theme
-from ui.widgets import ReviewDialog
+from ui.board import ChessBoard
+from ui.widgets import ReviewDialog, _uci_of
 from ui.worker import PipelineWorker
 
 
@@ -38,6 +41,7 @@ class MistakesTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None
+        self._rows: list = []
 
         self.cb_source = QComboBox()
         self.cb_source.addItem("Human", "human")
@@ -83,7 +87,30 @@ class MistakesTab(QWidget):
         )
         layout.addWidget(toolbar)
         layout.addWidget(self.lbl_stats)
-        layout.addWidget(self.table, 1)
+
+        # 노테이션을 모르면 SAN 표가 무의미하니, 행을 고르면 보드가 뜨게 한다.
+        self.board = ChessBoard()
+        self.board.set_interactive(False)
+        self.board.setMinimumWidth(320)
+        self.lbl_preview_move = theme.label("", role="small")
+        self.lbl_preview_move.setWordWrap(True)
+        self.lbl_preview = theme.label("행을 고르면 여기에 포지션이 뜬다.", role="muted")
+        self.lbl_preview.setWordWrap(True)
+
+        side = QWidget()
+        side_l = QVBoxLayout(side)
+        side_l.setContentsMargins(0, 0, 0, 0)
+        side_l.setSpacing(8)
+        side_l.addWidget(self.board, 1)
+        side_l.addWidget(self.lbl_preview_move)
+        side_l.addWidget(self.lbl_preview)
+
+        split = QSplitter(Qt.Horizontal)
+        split.addWidget(self.table)
+        split.addWidget(side)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
+        layout.addWidget(split, 1)
 
         self.btn_refresh = QPushButton("새로고침")
         self.btn_refresh.setProperty("variant", "ghost")
@@ -92,7 +119,37 @@ class MistakesTab(QWidget):
         self.btn_review.clicked.connect(self._review)
         self.cb_source.currentIndexChanged.connect(self.refresh)
         self.cb_only_wrong.stateChanged.connect(self.refresh)
+        self.table.currentCellChanged.connect(lambda *_: self._on_row())
+        self.table.itemDoubleClicked.connect(lambda *_: self._review_current())
         self.refresh()
+
+    def _on_row(self) -> None:
+        idx = self.table.currentRow()
+        if idx < 0 or idx >= len(self._rows):
+            self.board.set_position(chess.STARTING_FEN)
+            self.board.clear_marks()
+            self.lbl_preview_move.setText("")
+            self.lbl_preview.setText("행을 고르면 여기에 포지션이 뜬다.")
+            return
+        r = self._rows[idx]
+        fen = r.get("fen") or chess.STARTING_FEN
+        self.board.set_position(fen)
+        self.board.clear_marks()
+        my_san = r.get("my_san") or ""
+        best_san = r.get("best_san") or ""
+        my_uci = _uci_of(fen, my_san)
+        best_uci = _uci_of(fen, best_san)
+        if my_uci:
+            self.board.show_wrong(my_uci)
+        if best_uci:
+            self.board.show_hint(best_uci)
+        self.lbl_preview_move.setText(
+            f"빨강 화살표 = 내가 둔 수  ·  초록 화살표 = 엔진 정답"
+        )
+        self.lbl_preview.setText(
+            f"내 수 {my_san or '?'}   →   정답 {best_san or '?'}\n"
+            f"(손실 {r.get('loss', 0):.2f})  한 번 더 복습하려면 '실수 복습 시작'을 눌러라."
+        )
 
     # -- data ---------------------------------------------------------------
 
@@ -107,6 +164,7 @@ class MistakesTab(QWidget):
             f"아직 안 본 것 {counts['unreviewed']}  ·  미분석 게임 {gc['pending']}"
         )
         rows = db.list_mistakes(source=src, only_wrong=only_wrong)
+        self._rows = rows
         self.table.setRowCount(0)
         for r in rows:
             i = self.table.rowCount()
@@ -129,6 +187,21 @@ class MistakesTab(QWidget):
 
     def _cfg(self):
         return cfg_mod.load_config()
+
+    def _review_current(self) -> None:
+        idx = self.table.currentRow()
+        if idx < 0 or idx >= len(self._rows):
+            return
+        cfg = self._cfg()
+        dialog = ReviewDialog(
+            [self._rows[idx]],
+            "mistake",
+            wrong_due_seconds=int(cfg_mod.get(cfg, "sr.wrong_due_seconds", 600) or 600),
+            title="실수 하나 복습",
+            parent=self,
+        )
+        dialog.exec()
+        self.refresh()
 
     def _review(self) -> None:
         source = self.cb_source.currentData()

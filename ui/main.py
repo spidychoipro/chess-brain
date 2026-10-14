@@ -126,7 +126,7 @@ class MainWindow(QMainWindow):
         mc = db.mistake_counts()
         pc = db.problem_counts()
         self.lbl_sub.setText(
-            f"복습할 실수 {mc['due']} · 노테이션 {pc['due']} · 실수 총 {mc['total']}"
+            f"복습할 실수 {mc['due']} · 복습할 문제 {pc['due']} · 실수 총 {mc['total']}"
         )
 
     def _refresh_all(self) -> None:
