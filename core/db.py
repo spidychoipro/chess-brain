@@ -333,6 +333,9 @@ def add_mistake(
     ply: int,
 ) -> int:
     """Insert a mistake, or return the id of the existing identical one."""
+    # 최선수를 그대로 둔 수는 실수가 아니다(가짜 실수 방지).
+    if my_san and my_san == best_san:
+        return 0
     conn = connect()
     try:
         cur = conn.execute(

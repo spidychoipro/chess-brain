@@ -250,11 +250,25 @@ def find_mistake(
         sign = 1.0 if board.turn == chess.WHITE else -1.0
         score_before = before["pawns_white"] * sign
 
+        my_san = board.san(move)
+        best_san = before["best_san"]
+
+        # 엔진 최선수를 그대로 둔 건 실수가 아니다.
+        if best_san and best_san == my_san:
+            return None
+
         after_board = board.copy()
         after_board.push(move)
-        score_after = engine.evaluate(after_board) * sign
+        # 수를 둔 뒤 국면이 끝났으면 엔진 점수를 믿지 말고 직접 판정한다.
+        # 체크메이트 직후 Stockfish 는 Mate(0) 을 주는데, _to_pawns 가 부호를
+        # 못 살려서 -100 으로 뒤집히는 문제가 있었다(메이트를 걸었는데 손실 200).
+        if after_board.is_checkmate():
+            score_after = 100.0              # 내가 메이트를 걸었다
+        elif after_board.is_game_over():     # 스테일메이트/기물부족/50수 = 무승부
+            score_after = 0.0
+        else:
+            score_after = engine.evaluate(after_board) * sign
 
-        my_san = board.san(move)
         loss = score_before - score_after
 
         if loss >= threshold:
@@ -262,7 +276,7 @@ def find_mistake(
                 eval_before=round(score_before, 3),
                 eval_after=round(score_after, 3),
                 loss=round(loss, 3),
-                best_san=before["best_san"],
+                best_san=best_san,
                 my_san=my_san,
             )
         return None

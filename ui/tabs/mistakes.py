@@ -47,6 +47,9 @@ class MistakesTab(QWidget):
         self.cb_source.addItem("Human", "human")
         self.cb_source.addItem("Bot", "bot")
         self.cb_source.addItem("Both", "both")
+        # both 로 분석했는데 목록은 Human 만 보여서 '사람만 했다'로 보이던 문제.
+        # 기본을 Both 로 둬서 분석한 게 다 보이게 한다.
+        self.cb_source.setCurrentIndex(self.cb_source.findData("both"))
 
         self.cb_only_wrong = QCheckBox("자주 틀린 것만 (wrong ≥ 1)")
         self.lbl_stats = theme.label("", role="muted")
