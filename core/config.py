@@ -33,6 +33,7 @@ DEFAULTS: Dict[str, Any] = {
         "binary": "",            # rclone.exe 경로 (비우면 PATH/흔한 위치 자동 탐색)
         "config": "",            # rclone.conf 경로 (비우면 rclone 기본 위치)
         "remote": "",            # 예: "gdrive:chess분석"
+        "mount_point": "",       # mount 할 드라이브 문자 (예: "X:")
     },
     "stockfish": {
         "path": "",

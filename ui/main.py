@@ -134,3 +134,13 @@ class MainWindow(QMainWindow):
             if hasattr(page, "refresh"):
                 page.refresh()
         self._update_sub()
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt name
+        # 붙여둔 드라이브가 있으면 앱을 닫을 때 함께 해제한다.
+        try:
+            from core import rclone as rclone_mod
+
+            rclone_mod.stop_mount()
+        except Exception:
+            pass
+        super().closeEvent(event)

@@ -7,8 +7,9 @@ path simply disables the mistakes tab instead of breaking the app.
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import chess
 import chess.engine
@@ -16,6 +17,129 @@ import chess.engine
 
 def engine_available(path: str) -> bool:
     return bool(path) and os.path.isfile(path)
+
+
+# -- stockfish 자동 감지 ------------------------------------------------------
+
+# 이름에 CPU 명령셋이 들어간 빌드가 여러 개 있으면 빠른 것부터 고른다.
+def _sf_rank(name: str) -> int:
+    n = name.lower()
+    if n == "stockfish.exe":
+        return 0
+    for i, tag in enumerate(("bmi2", "avx2", "avx", "popcnt", "sse41"), start=1):
+        if tag in n:
+            return i
+    return 6
+
+
+# 훑을 때 건너뛸 폴더. OneDrive 는 규칙상 아예 열지 않는다(placeholder 다운로드 방지).
+_SKIP_DIRS = {
+    "windows", "$recycle.bin", "system volume information", "onedrive",
+    "node_modules", ".git", ".venv", "venv", "__pycache__", "appdata",
+    "saved games", "searches", "links", "favorites", "recent", "contacts",
+    "templates", "nethood", "printhood", "start menu", "시작 메뉴",
+    "my documents", "application data", "local settings", "cookies",
+    "music", "pictures", "videos", "3d objects",
+}
+
+
+def _common_dirs() -> List[str]:
+    env = os.environ.get
+    home = env("USERPROFILE", "")
+    local = env("LOCALAPPDATA", "")
+    dirs = [
+        local + r"\Programs",
+        local + r"\Microsoft\WinGet\Links",
+        local + r"\Microsoft\WinGet\Packages",
+        home + r"\scoop\shims",
+        home + r"\scoop\apps",
+        r"C:\Program Files",
+        r"C:\Program Files (x86)",
+        r"C:\ProgramData\chocolatey\bin",
+        r"C:\stockfish",
+        home,
+        home + r"\Downloads",
+        home + r"\Desktop",
+        home + r"\Documents",
+        home + r"\Projects",
+        home + r"\Dev",
+        home + r"\chess분석",
+        home + r"\chess-brain",
+        home + r"\chesscom_pgn_auto",
+    ]
+    return [d for d in dirs if d and os.path.isdir(d)]
+
+
+def _app_dirs() -> List[str]:
+    """앱(또는 소스) 옆에 stockfish 를 같이 둔 경우를 잡는다."""
+    dirs: List[str] = []
+    try:
+        from core.utils import project_root
+
+        root = project_root()
+        dirs += [str(root), str(root / "engines"), str(root.parent)]
+    except Exception:
+        pass
+    dirs += [os.getcwd(), os.path.join(os.getcwd(), "engines")]
+    seen, out = set(), []
+    for d in dirs:
+        ad = os.path.abspath(d)
+        if ad not in seen and os.path.isdir(ad):
+            seen.add(ad)
+            out.append(ad)
+    return out
+
+
+def _walk_for_sf(root: str, max_depth: int = 3) -> List[str]:
+    root = os.path.abspath(root)
+    base = root.rstrip("\\/").count(os.sep)
+    found: List[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        depth = dirpath.rstrip("\\/").count(os.sep) - base
+        if depth >= max_depth:
+            dirnames[:] = []
+        else:
+            dirnames[:] = [d for d in dirnames if d.lower() not in _SKIP_DIRS]
+        for fn in filenames:
+            low = fn.lower()
+            if low.startswith("stockfish") and low.endswith(".exe"):
+                found.append(os.path.join(dirpath, fn))
+    return found
+
+
+def find_stockfish(fast: bool = False) -> Optional[str]:
+    """stockfish.exe 를 찾는다. ``fast=True`` 면 널리 훑지 않고 흔한 자리만 본다.
+
+    PATH → 앱 옆 → 흔한 설치 위치 순. 결과는 CPU 명령셋이 빠른 빌드 우선.
+    """
+    which = shutil.which("stockfish")
+    if which and os.path.isfile(which):
+        return which
+
+    candidates: List[str] = []
+    for d in _app_dirs():
+        try:
+            names = os.listdir(d)
+        except OSError:
+            continue
+        for fn in names:
+            low = fn.lower()
+            if low.startswith("stockfish") and low.endswith(".exe"):
+                candidates.append(os.path.join(d, fn))
+
+    dirs = _common_dirs()
+    # fast 는 한 단계만(=예: Downloads\stockfish\stockfish.exe 같은 한 겹 안쪽까지),
+    # 버튼을 눌렀을 땐 몇 단계 더 들어가 본다.
+    depth = 1 if fast else 3
+    for d in dirs:
+        candidates += _walk_for_sf(d, max_depth=depth)
+
+    if not candidates:
+        return None
+    # 중복 제거 후 CPU 명령셋 빠른 빌드 우선.
+    uniq = sorted(set(candidates))
+    uniq.sort(key=lambda p: (_sf_rank(os.path.basename(p)), os.path.basename(p).lower()))
+    return uniq[0]
 
 
 def _to_pawns(pov) -> float:

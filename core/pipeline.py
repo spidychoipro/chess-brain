@@ -266,6 +266,54 @@ def pull_rclone_to_local(cfg: Dict[str, Any], on_progress: Progress = None) -> D
     return sync_local_folder(cfg, on_progress)
 
 
+def mount_drive(cfg: Dict[str, Any], on_progress: Progress = None) -> Dict[str, Any]:
+    """rclone mount 로 드라이브를 로컬 드라이브 문자에 붙인다 (복사 없이 실시간).
+
+    붙고 나면 그 드라이브 문자를 '로컬 PGN 폴더'로 쓰면 된다. Windows 는 WinFsp 필요.
+    """
+    from core import rclone as rclone_mod
+
+    exe = rclone_mod.find_binary(cfg)
+    if not exe:
+        raise ValueError(
+            "rclone 을 찾을 수 없습니다. 'rclone.exe 경로'를 지정하거나 PATH 에 넣으세요."
+        )
+    remote = rclone_mod.get_remote(cfg)
+    if not remote:
+        raise ValueError("설정에서 rclone 원격 경로를 지정하세요. (예: gdrive:chess분석)")
+    mount_point = rclone_mod.get_mount_point(cfg)
+    if not mount_point:
+        raise ValueError("붙일 드라이브 문자를 입력하세요. (예: X:)")
+    if rclone_mod.find_winfsp() is None:
+        raise ValueError(
+            "WinFsp 가 필요합니다(mount 기능). winfsp.dev 에서 설치 후 다시 시도하세요. "
+            "설치 없이 쓰려면 'rclone 으로 받기'(copy)를 쓰면 됩니다."
+        )
+
+    _note(on_progress, f"rclone mount {remote} → {mount_point}")
+    rclone_mod.start_mount(exe, remote, mount_point, config=rclone_mod.get_config(cfg))
+    if not rclone_mod.wait_for_mount(mount_point):
+        rclone_mod.stop_mount()
+        raise RuntimeError(
+            "마운트 실패. data\\rclone-mount.log 를 확인하세요 "
+            "(remote/드라이브 문자/WinFsp 문제일 수 있음)."
+        )
+    _note(on_progress, f"마운트됨: {mount_point} — 이제 '로컬 PGN 폴더'로 쓰면 됩니다.")
+    return {"mounted": True, "mount_point": mount_point}
+
+
+def unmount_drive(cfg: Dict[str, Any] = None, on_progress: Progress = None) -> Dict[str, Any]:
+    """붙어 있는 rclone mount 를 해제한다."""
+    from core import rclone as rclone_mod
+
+    stopped = rclone_mod.stop_mount()
+    if stopped:
+        _note(on_progress, "마운트 해제됨.")
+    else:
+        _note(on_progress, "붙어 있는 드라이브가 없습니다.")
+    return {"mounted": False, "stopped": stopped}
+
+
 def analyze_mistakes(
     cfg: Dict[str, Any],
     source: str = "human",
