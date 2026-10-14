@@ -231,6 +231,38 @@ def pull_drive_to_local(cfg: Dict[str, Any], on_progress: Progress = None) -> Di
     return stats
 
 
+def pull_rclone_to_local(cfg: Dict[str, Any], on_progress: Progress = None) -> Dict[str, int]:
+    """rclone copy 로 드라이브 폴더를 로컬로 가져온 뒤, 이어서 로컬 동기화한다.
+
+    rclone 이 구글 인증을 들고 있으니 앱은 API 키/OAuth 가 필요 없다. 사용자는
+    rclone remote(예: ``gdrive:chess-brian``)만 지정하면 된다.
+    """
+    from core import rclone as rclone_mod
+
+    db.init_db()
+    root = cfg_mod.get(cfg, "local.pgn_folder", "") or ""
+    if not root:
+        raise ValueError("먼저 '로컬 PGN 폴더'를 지정하세요. rclone 이 여기로 받아옵니다.")
+    remote = rclone_mod.get_remote(cfg)
+    if not remote:
+        raise ValueError("설정에서 rclone 원격 경로를 지정하세요. (예: gdrive:chess-brian)")
+    exe = rclone_mod.find_binary(cfg)
+    if not exe:
+        raise ValueError(
+            "rclone 을 찾을 수 없습니다. 'rclone.exe 경로'를 지정하거나 PATH 에 넣으세요. "
+            "(rclone 은 설치 없이 exe 하나만 있으면 됨)"
+        )
+
+    os.makedirs(root, exist_ok=True)
+    _note(on_progress, f"rclone copy {remote} → {root}")
+    code = rclone_mod.run_copy(exe, remote, root, on_line=lambda m: _note(on_progress, m))
+    if code != 0:
+        raise RuntimeError(f"rclone 실패 (code {code}). remote/경로를 확인하세요.")
+
+    _note(on_progress, "rclone 완료 → 로컬 동기화 시작")
+    return sync_local_folder(cfg, on_progress)
+
+
 def analyze_mistakes(
     cfg: Dict[str, Any],
     source: str = "human",

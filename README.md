@@ -38,8 +38,8 @@ python main.py
 
 드라이브에 파일이 이미 있다면, 굳이 OAuth 클라이언트(credentials.json)를 만들 필요 없이 아래 중 하나로 로컬에 가져와서 방법 1로 쓰면 된다. 앱은 로컬 폴더만 보면 되니 구글 인증이 필요 없다.
 
+- **rclone (추천 · 구글 설정 불필요)**: 이미 rclone 을 쓰고 있다면 이게 제일 깔끔하다. rclone 이 구글 인증을 들고 있으니 앱은 API 키도 OAuth 도 필요 없다. rclone 은 설치 없이 exe 하나만 있으면 되고, 앱 **설정 → rclone** 카드에 **원격 경로**(예: `gdrive:chess-brian`)만 넣고 **rclone 으로 받기** 를 누르면 **로컬 PGN 폴더**로 `.pgn` 을 받아온 뒤 바로 동기화한다. 수동으로 하려면 `rclone copy gdrive:chess-brian C:\chess\games --include "*.pgn"` 후 **로컬 동기화**.
 - **앱에서 바로 받기 (API 키)**: 부모 폴더를 드라이브에서 우클릭 → 공유 → **링크가 있는 모든 사용자 · 뷰어** 로 바꾼다. Cloud Console 에서 **API 키 하나만** 발급하고(동의화면 필요 없음, 무료) 앱 **설정 → API 키** 칸에 붙여넣은 뒤 **드라이브 → 로컬로 받기** 를 누르면 PGN 이 **로컬 PGN 폴더**로 내려받아지고 곧바로 동기화된다. 이후에는 **로컬 동기화** 만 돌려도 된다.
-- **Google Drive for Desktop**: [Google Drive for Desktop](https://www.google.com/drive/download/) 을 설치하고 로그인하면 내 드라이브가 탐색기의 로컬 드라이브(예: `G:\My Drive\...`)로 나타난다. 그 안의 PGN 폴더 경로를 **로컬 PGN 폴더**로 지정하면 된다.
 - **한 번만 받기**: 드라이브 웹에서 PGN 폴더를 우클릭 → **다운로드**(zip) → 압축을 풀고 그 경로를 **로컬 PGN 폴더**로 지정. 새 게임이 생기면 다시 받아서 덮어쓰면 되고, 이미 처리한 게임은 중복 생성되지 않는다.
 
 > 참고: 드라이브 접근에는 구글이 인증을 요구한다. 다만 **링크 공유 폴더 + API 키** 는 로그인 창이 필요 없어서 제일 간단하고, 비공개로 두고 싶으면 OAuth(credentials.json) 를 쓴다. 둘 다 무료다.
@@ -83,6 +83,7 @@ chess-brain/
 │   ├── db.py         # sqlite 스키마 + mistakes/problems/games 헬퍼
 │   ├── sr.py         # SM-2 경량 (ease/interval/due_at)
 │   ├── drive.py      # 구글드라이브 읽기전용 + Bot/Human 분류
+│   ├── rclone.py     # rclone 으로 드라이브 → 로컬 (앱은 구글 설정 불필요)
 │   ├── parser.py     # python-chess 로 내가 둔 수 추출
 │   ├── engine.py     # Stockfish (선택)
 │   └── pipeline.py   # 동기화 → 문제 생성 → 실수 분석
