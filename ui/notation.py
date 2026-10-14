@@ -15,7 +15,7 @@ import random
 from typing import Any, Dict, List, Optional
 
 import chess
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDialog,
@@ -264,6 +264,9 @@ class Stage1Pieces(_Stage):
         self._piece: Optional[int] = None
         self._kind = "glyph2letter"
         self._answered = False
+        self._advance_timer = QTimer(self)
+        self._advance_timer.setSingleShot(True)
+        self._advance_timer.timeout.connect(self._new_question)
         self._new_question()
 
     def _clear(self, layout) -> None:
@@ -331,13 +334,12 @@ class Stage1Pieces(_Stage):
         self.lbl_score.setText(f"맞음 {self.correct} / {self.total}")
         self.lbl_fb.setText(msg + "   (다음 문제로)")
         theme.set_state(self.lbl_fb, "success" if ok else "danger")
-        from PySide6.QtCore import QTimer
-
-        QTimer.singleShot(1100, self._new_question)
+        self._advance_timer.start(1100)
 
     def start(self) -> None:
         self.correct = 0
         self.total = 0
+        self._advance_timer.stop()
         self._new_question()
 
 
@@ -389,6 +391,9 @@ class Stage2Squares(_Stage):
         self._kind = "name"
         self._target = 0
         self._answered = False
+        self._advance_timer = QTimer(self)
+        self._advance_timer.setSingleShot(True)
+        self._advance_timer.timeout.connect(self._new_question)
         self._new_question()
 
     def _clear(self, layout) -> None:
@@ -472,13 +477,12 @@ class Stage2Squares(_Stage):
         self.board.glow_square(self._target)
         self.lbl_fb.setText(msg + "   (다음 문제로)")
         theme.set_state(self.lbl_fb, "success" if ok else "danger")
-        from PySide6.QtCore import QTimer
-
-        QTimer.singleShot(1200, self._new_question)
+        self._advance_timer.start(1200)
 
     def start(self) -> None:
         self.correct = 0
         self.total = 0
+        self._advance_timer.stop()
         self.board.set_position(chess.STARTING_FEN)
         self.board.set_pick_mode(True)
         self._new_question()
