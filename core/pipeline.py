@@ -255,7 +255,10 @@ def pull_rclone_to_local(cfg: Dict[str, Any], on_progress: Progress = None) -> D
 
     os.makedirs(root, exist_ok=True)
     _note(on_progress, f"rclone copy {remote} → {root}")
-    code = rclone_mod.run_copy(exe, remote, root, on_line=lambda m: _note(on_progress, m))
+    code = rclone_mod.run_copy(
+        exe, remote, root, config=rclone_mod.get_config(cfg),
+        on_line=lambda m: _note(on_progress, m),
+    )
     if code != 0:
         raise RuntimeError(f"rclone 실패 (code {code}). remote/경로를 확인하세요.")
 

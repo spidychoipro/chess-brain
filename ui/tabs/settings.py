@@ -148,6 +148,11 @@ class SettingsTab(QWidget):
         self.btn_rclone_bin = QPushButton("찾아보기")
         self.btn_rclone_bin.setProperty("variant", "ghost")
         self.btn_rclone_bin.clicked.connect(self._browse_rclone)
+        self.in_rclone_conf = QLineEdit()
+        self.in_rclone_conf.setPlaceholderText("rclone.conf 경로 (비우면 기본 위치)")
+        self.btn_rclone_conf = QPushButton("찾아보기")
+        self.btn_rclone_conf.setProperty("variant", "ghost")
+        self.btn_rclone_conf.clicked.connect(self._browse_rclone_conf)
         self.btn_rclone = QPushButton("rclone 으로 받기")
         self.btn_rclone.setProperty("variant", "primary")
         self.btn_rclone.clicked.connect(self._pull_rclone)
@@ -155,14 +160,19 @@ class SettingsTab(QWidget):
         rclone_bin_row = QHBoxLayout()
         rclone_bin_row.addWidget(self.in_rclone_bin, 1)
         rclone_bin_row.addWidget(self.btn_rclone_bin)
+        rclone_conf_row = QHBoxLayout()
+        rclone_conf_row.addWidget(self.in_rclone_conf, 1)
+        rclone_conf_row.addWidget(self.btn_rclone_conf)
         rclone_form = QFormLayout()
         rclone_form.addRow(theme.label("rclone 원격", role="muted"), self.in_rclone_remote)
         rclone_form.addRow(theme.label("rclone.exe", role="muted"), rclone_bin_row)
+        rclone_form.addRow(theme.label("rclone.conf", role="muted"), rclone_conf_row)
         rclone_form.addRow("", self.btn_rclone)
         self.lbl_rclone = theme.label(
             "rclone 을 쓰면 앱에 구글 API 키/OAuth 가 전혀 필요 없다(rclone 이 인증을 들고 있음). "
             "rclone 원격 경로만 넣고 누르면 위 '로컬 PGN 폴더'로 받아온 뒤 바로 동기화한다. "
-            "rclone 은 설치 없이 exe 하나만 있으면 됨.",
+            "rclone.conf 를 기본 위치가 아닌 곳에 뒀으면 그 경로도 넣으면 된다(예: "
+            "C:\\Users\\<나>\\.config\\chesspgn-auto\\rclone.conf).",
             role="muted",
         )
         self.lbl_rclone.setWordWrap(True)
@@ -274,6 +284,7 @@ class SettingsTab(QWidget):
         self.in_local.setText(cfg_mod.get(c, "local.pgn_folder", "") or "")
         self.in_rclone_remote.setText(cfg_mod.get(c, "rclone.remote", "") or "")
         self.in_rclone_bin.setText(cfg_mod.get(c, "rclone.binary", "") or "")
+        self.in_rclone_conf.setText(cfg_mod.get(c, "rclone.config", "") or "")
         self.sp_depth.setValue(int(cfg_mod.get(c, "stockfish.depth", 12) or 12))
         self.sp_threshold.setValue(float(cfg_mod.get(c, "mistakes.loss_threshold", 0.80) or 0.80))
         idx = self.cb_source.findData(cfg_mod.get(c, "training.default_source", "bot"))
@@ -289,6 +300,7 @@ class SettingsTab(QWidget):
         cfg_mod.set_(self.cfg, "local.pgn_folder", self.in_local.text().strip())
         cfg_mod.set_(self.cfg, "rclone.remote", self.in_rclone_remote.text().strip())
         cfg_mod.set_(self.cfg, "rclone.binary", self.in_rclone_bin.text().strip())
+        cfg_mod.set_(self.cfg, "rclone.config", self.in_rclone_conf.text().strip())
         cfg_mod.set_(self.cfg, "stockfish.path", self.in_stockfish.text().strip())
         cfg_mod.set_(self.cfg, "stockfish.depth", int(self.sp_depth.value()))
         cfg_mod.set_(self.cfg, "mistakes.loss_threshold", float(self.sp_threshold.value()))
@@ -441,6 +453,13 @@ class SettingsTab(QWidget):
         )
         if path:
             self.in_rclone_bin.setText(path)
+
+    def _browse_rclone_conf(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "rclone.conf 선택", "", "rclone 설정 (*.conf);;모든 파일 (*)"
+        )
+        if path:
+            self.in_rclone_conf.setText(path)
 
     def _pull_rclone(self) -> None:
         from core import pipeline

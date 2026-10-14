@@ -42,10 +42,20 @@ def get_remote(cfg: Dict[str, Any]) -> str:
     return (cfg_mod.get(cfg, "rclone.remote", "") or "").strip()
 
 
-def build_copy_cmd(exe: str, remote: str, dest: str) -> List[str]:
-    """``rclone copy`` 명령. ``.pgn`` 만, 하위폴더 구조는 유지."""
-    return [
-        exe,
+def get_config(cfg: Dict[str, Any]) -> str:
+    """rclone.conf 경로. 비어 있으면 rclone 기본 위치를 쓴다."""
+    return (cfg_mod.get(cfg, "rclone.config", "") or "").strip()
+
+
+def build_copy_cmd(exe: str, remote: str, dest: str, config: str = "") -> List[str]:
+    """``rclone copy`` 명령. ``.pgn`` 만, 하위폴더 구조는 유지.
+
+    rclone 전역 플래그(``--config``)는 서브커맨드 앞에 와야 한다.
+    """
+    cmd: List[str] = [exe]
+    if config:
+        cmd += ["--config", config]
+    cmd += [
         "copy",
         remote,
         dest,
@@ -55,13 +65,14 @@ def build_copy_cmd(exe: str, remote: str, dest: str) -> List[str]:
         "--stats-one-line",
         "-v",
     ]
+    return cmd
 
 
-def run_copy(exe: str, remote: str, dest: str, on_line=None) -> int:
+def run_copy(exe: str, remote: str, dest: str, config: str = "", on_line=None) -> int:
     """rclone copy 를 실행하고 출력을 한 줄씩 넘긴다. 반환값은 종료 코드."""
     import subprocess
 
-    cmd = build_copy_cmd(exe, remote, dest)
+    cmd = build_copy_cmd(exe, remote, dest, config)
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
