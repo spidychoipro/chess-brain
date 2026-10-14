@@ -75,6 +75,14 @@ def _selftest() -> int:
     if log:
         log("selftest-shown")
 
+    # 모든 탭을 한 번씩 열어본다. frozen 빌드에서 탭별 import 가 깨지면
+    # (예전의 unittest 처럼) 여기서 바로 예외가 나서 빌드 단계에서 잡힌다.
+    for i in range(window.nav.count()):
+        window.nav.setCurrentRow(i)
+        app.processEvents()
+    if log:
+        log("selftest-tabs")
+
     from ui.widgets import ReviewDialog
 
     items = db.problems_due(source=None, soft=True)
