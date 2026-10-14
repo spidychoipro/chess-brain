@@ -62,6 +62,7 @@ class ReviewPanel(QWidget):
         self.correct_first_try = 0
         self.attempted: set = set()
         self._last_uci: Optional[str] = None
+        self._wrong_streak = 0
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -144,22 +145,28 @@ class ReviewPanel(QWidget):
         )
         ctx = item.get("context_sans") or "(첫 수라 보여줄 기보가 없음)"
         self.lbl_context.setText(ctx)
-        self.lbl_section.setText(self._section_text(item))
-        self.lbl_prompt.setText(
-            "보드에서 다음 수를 두세요. (기물 → 도착칸 클릭)"
-        )
         self.lbl_feedback.setText("")
         theme.set_state(self.lbl_feedback, "muted")
         self._last_uci = None
+        self._wrong_streak = 0
         self.board.set_position(item["fen"])
         self.board.clear_marks()
         self.board.set_interactive(True)
         self.btn_reveal.setEnabled(True)
+        # 포지션을 먼저 세팅한 뒤 라벨을 만든다. 순서를 바꾸면 라벨이 직전
+        # 문제의 차례를 읽어서 색이 한 문제씩 어긋난다.
+        self.lbl_section.setText(self._section_text(item))
+        self.lbl_prompt.setText(
+            "보드에서 다음 수를 두세요. (기물 → 도착칸 클릭)"
+        )
 
     def _section_text(self, item: Dict[str, Any]) -> str:
         src = {"bot": "봇전", "human": "사람전"}.get(item.get("source"), item.get("source", ""))
         ply = item.get("ply")
-        turn = "흑" if self.board.board.turn == chess.BLACK else "백"
+        try:
+            turn = "흑" if chess.Board(item["fen"]).turn == chess.BLACK else "백"
+        except Exception:
+            turn = "백"
         tail = f"{src} · {ply}수째 · 내 차례({turn})" if ply else f"{src} · 내 차례({turn})"
         return tail
 
@@ -190,10 +197,21 @@ class ReviewPanel(QWidget):
         first_try = key not in self.attempted
         self.attempted.add(key)
 
-        self.board.set_interactive(False)
-        self.btn_reveal.setEnabled(False)
+        # 정답 정보가 없는 문제는 판정할 수 없으니 넘어간다(무한 재투입 방지).
+        if not target:
+            self.board.set_interactive(False)
+            self.btn_reveal.setEnabled(False)
+            self.done += 1
+            self.queue.pop(0)
+            self.progress.setValue(self.done)
+            self.lbl_feedback.setText("정답 정보가 없는 문제라 넘어갈게.")
+            theme.set_state(self.lbl_feedback, "muted")
+            self._timer.start(self.FEEDBACK_MS)
+            return
 
-        if target and san == target:
+        if san == target:
+            self.board.set_interactive(False)
+            self.btn_reveal.setEnabled(False)
             self._apply(item, sr_mod.GRADE_GOOD)
             if first_try:
                 self.correct_first_try += 1
@@ -205,30 +223,42 @@ class ReviewPanel(QWidget):
             self.lbl_feedback.setText(f"정답!  ({target})")
             theme.set_state(self.lbl_feedback, "success")
             self._timer.start(self.FEEDBACK_MS)
-        else:
-            self._apply(item, sr_mod.GRADE_AGAIN)
-            if self._last_uci:
-                self.board.show_wrong(self._last_uci)
-            target_uci = _uci_of(item["fen"], target)
-            if target_uci:
-                self.board.show_hint(target_uci)
-                msg = "오답. 초록 화살표가 정답이야. 조금 뒤에 이 문제를 다시 낼게."
-            else:
-                msg = "오답. 이 문제는 정답 정보가 없어서 넘어갈게."
-            if target:
-                msg += f"  ({target})"
-            self.lbl_feedback.setText(msg)
+            return
+
+        # 오답
+        self._wrong_streak += 1
+        if self._last_uci:
+            self.board.show_wrong(self._last_uci)
+
+        if self._wrong_streak == 1:
+            # 첫 오답: 빨간 표시만 하고 정답은 감춘다. 다시 시도하게 둔다.
+            self.lbl_feedback.setText(
+                "그 수는 아니야. 다시 해봐.  (정답을 보려면 '모르겠음')"
+            )
             theme.set_state(self.lbl_feedback, "danger")
-            # 오답은 즉시 재도전: 같은 문제를 큐 맨 앞에 다시 둔다.
-            self.queue.pop(0)
-            self.queue.insert(0, item)
-            self._timer.start(self.FEEDBACK_MS)
+            return
+
+        # 두 번째 오답: 이제 정답을 보여주고 같은 문제를 큐 맨 앞에 다시 둔다.
+        self.board.set_interactive(False)
+        self.btn_reveal.setEnabled(False)
+        self._apply(item, sr_mod.GRADE_AGAIN)
+        target_uci = _uci_of(item["fen"], target)
+        if target_uci:
+            self.board.show_hint(target_uci)
+        self.lbl_feedback.setText(
+            f"이번엔 정답을 볼게. 초록 화살표가 정답이야. 조금 뒤에 다시 낼게.  ({target})"
+        )
+        theme.set_state(self.lbl_feedback, "danger")
+        self.queue.pop(0)
+        self.queue.insert(0, item)
+        self._timer.start(self.FEEDBACK_MS)
 
     def _reveal(self) -> None:
         """모르겠음: 정답 화살표만 보여주고 오답 처리한다(바로 큐 재투입)."""
         if not self.queue or not self.board.is_interactive():
             return
         item = self.queue[0]
+        self.attempted.add(item.get("id"))  # 정답을 보여줬으니 첫시도 정답으로 안 친다
         target = self._target(item)
         target_uci = _uci_of(item["fen"], target)
         if target_uci:
