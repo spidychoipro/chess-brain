@@ -140,6 +140,41 @@ class SettingsTab(QWidget):
         cl.addLayout(local_row)
         cl.addLayout(local_actions)
 
+        # -- rclone (구글 인증은 rclone 이 담당 = 앱은 설정 필요 없음) ---------
+        self.in_rclone_remote = QLineEdit()
+        self.in_rclone_remote.setPlaceholderText("rclone 원격 경로 (예: gdrive:chess-brian)")
+        self.in_rclone_bin = QLineEdit()
+        self.in_rclone_bin.setPlaceholderText("rclone.exe 경로 (비우면 PATH 자동 탐색)")
+        self.btn_rclone_bin = QPushButton("찾아보기")
+        self.btn_rclone_bin.setProperty("variant", "ghost")
+        self.btn_rclone_bin.clicked.connect(self._browse_rclone)
+        self.btn_rclone = QPushButton("rclone 으로 받기")
+        self.btn_rclone.setProperty("variant", "primary")
+        self.btn_rclone.clicked.connect(self._pull_rclone)
+
+        rclone_bin_row = QHBoxLayout()
+        rclone_bin_row.addWidget(self.in_rclone_bin, 1)
+        rclone_bin_row.addWidget(self.btn_rclone_bin)
+        rclone_form = QFormLayout()
+        rclone_form.addRow(theme.label("rclone 원격", role="muted"), self.in_rclone_remote)
+        rclone_form.addRow(theme.label("rclone.exe", role="muted"), rclone_bin_row)
+        rclone_form.addRow("", self.btn_rclone)
+        self.lbl_rclone = theme.label(
+            "rclone 을 쓰면 앱에 구글 API 키/OAuth 가 전혀 필요 없다(rclone 이 인증을 들고 있음). "
+            "rclone 원격 경로만 넣고 누르면 위 '로컬 PGN 폴더'로 받아온 뒤 바로 동기화한다. "
+            "rclone 은 설치 없이 exe 하나만 있으면 됨.",
+            role="muted",
+        )
+        self.lbl_rclone.setWordWrap(True)
+
+        card_rclone = theme.card()
+        cr = QVBoxLayout(card_rclone)
+        cr.setContentsMargins(18, 16, 18, 16)
+        cr.setSpacing(10)
+        cr.addWidget(theme.label("rclone (선택·구글 설정 불필요)", role="h2"))
+        cr.addWidget(self.lbl_rclone)
+        cr.addLayout(rclone_form)
+
         # -- stockfish -------------------------------------------------------
         self.in_stockfish = QLineEdit()
         self.in_stockfish.setPlaceholderText("stockfish.exe 경로 (선택)")
@@ -205,6 +240,7 @@ class SettingsTab(QWidget):
         layout.setContentsMargins(0, 0, 8, 0)
         layout.setSpacing(14)
         layout.addWidget(card_local)
+        layout.addWidget(card_rclone)
         layout.addWidget(card_drive)
         layout.addWidget(card_sf)
         layout.addWidget(card_defaults)
@@ -236,6 +272,8 @@ class SettingsTab(QWidget):
         self.lbl_folder.setText(name or "-")
         self.in_stockfish.setText(cfg_mod.get(c, "stockfish.path", "") or "")
         self.in_local.setText(cfg_mod.get(c, "local.pgn_folder", "") or "")
+        self.in_rclone_remote.setText(cfg_mod.get(c, "rclone.remote", "") or "")
+        self.in_rclone_bin.setText(cfg_mod.get(c, "rclone.binary", "") or "")
         self.sp_depth.setValue(int(cfg_mod.get(c, "stockfish.depth", 12) or 12))
         self.sp_threshold.setValue(float(cfg_mod.get(c, "mistakes.loss_threshold", 0.80) or 0.80))
         idx = self.cb_source.findData(cfg_mod.get(c, "training.default_source", "bot"))
@@ -249,6 +287,8 @@ class SettingsTab(QWidget):
         cfg_mod.set_(self.cfg, "google_drive.parent_folder_id", self.in_parent.text().strip())
         cfg_mod.set_(self.cfg, "google_drive.api_key", self.in_api_key.text().strip())
         cfg_mod.set_(self.cfg, "local.pgn_folder", self.in_local.text().strip())
+        cfg_mod.set_(self.cfg, "rclone.remote", self.in_rclone_remote.text().strip())
+        cfg_mod.set_(self.cfg, "rclone.binary", self.in_rclone_bin.text().strip())
         cfg_mod.set_(self.cfg, "stockfish.path", self.in_stockfish.text().strip())
         cfg_mod.set_(self.cfg, "stockfish.depth", int(self.sp_depth.value()))
         cfg_mod.set_(self.cfg, "mistakes.loss_threshold", float(self.sp_threshold.value()))
@@ -395,18 +435,54 @@ class SettingsTab(QWidget):
         self._worker.finished.connect(lambda: self.btn_pull.setEnabled(True))
         self._worker.start()
 
+    def _browse_rclone(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "rclone.exe 선택", "", "실행 파일 (*.exe);;모든 파일 (*)"
+        )
+        if path:
+            self.in_rclone_bin.setText(path)
+
+    def _pull_rclone(self) -> None:
+        from core import pipeline
+
+        self._save()
+        if not self.in_local.text().strip():
+            self._log("먼저 '로컬 PGN 폴더'를 지정하세요. rclone 이 여기로 받아옵니다.")
+            return
+        if not self.in_rclone_remote.text().strip():
+            self._log("rclone 원격 경로를 입력하세요. (예: gdrive:chess-brian)")
+            return
+        if self._worker is not None and self._worker.isRunning():
+            self._log("이미 작업이 실행 중입니다.")
+            return
+        self._worker = PipelineWorker(pipeline.pull_rclone_to_local, cfg=self.cfg)
+        self._worker.message.connect(self._log)
+        self._worker.done.connect(self._on_done)
+        self._worker.failed.connect(self._on_sync_failed)
+        self.btn_rclone.setEnabled(False)
+        self._worker.finished.connect(lambda: self.btn_rclone.setEnabled(True))
+        self._worker.start()
+
     def _on_sync_failed(self, err: str) -> None:
-        # 자격증명이 없어서 실패한 경우엔 다음에 뭘 할지까지 보여준다.
+        # 자격증명/도구가 없어서 실패한 경우엔 다음에 뭘 할지까지 보여준다.
         if "credentials.json" in err:
             self._log(self._CRED_STEPS)
             return
         if "드라이브 접근 자격" in err:
             self._log(
-                "드라이브 접근 방법이 없음. 둘 중 하나:\n"
-                "1) API 키 (쉬움): 부모 폴더를 '링크가 있는 모든 사용자 · 뷰어'로 공유하고, "
+                "드라이브 접근 방법이 없음. 셋 중 하나:\n"
+                "1) rclone (구글 설정 불필요, 추천): rclone 원격 경로를 넣고 'rclone 으로 받기'.\n"
+                "2) API 키: 부모 폴더를 '링크가 있는 모든 사용자 · 뷰어'로 공유하고 "
                 "Cloud Console > Credentials > Create credentials > API key 로 키를 만들어 "
                 "위 'API 키' 칸에 붙여넣기.\n"
-                "2) 구글 인증: 'credentials.json 선택' 후 '구글 인증'."
+                "3) 구글 인증: 'credentials.json 선택' 후 '구글 인증'."
+            )
+            return
+        if "rclone 을 찾을 수 없습니다" in err:
+            self._log(
+                "rclone.exe 를 못 찾음. rclone 은 설치 없이 exe 하나만 있으면 됨. "
+                "rclone.org 에서 받아 아무 폴더에 두고 위 'rclone.exe 경로'에 지정하거나, "
+                "PATH 에 넣으면 자동으로 잡힌다."
             )
             return
         self._log(f"실패: {err}")
