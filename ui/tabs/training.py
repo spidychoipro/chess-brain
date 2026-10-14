@@ -31,6 +31,7 @@ class TrainingTab(QWidget):
         self.cb_mode = QComboBox()
         self.cb_mode.addItem("다음 수 맞추기 (Recall)", "recall")
         self.cb_mode.addItem("실수 집중 훈련 (Drill)", "drill")
+        self.cb_mode.addItem("노테이션 배우기 (기초부터)", "notation")
 
         self.cb_source = QComboBox()
         self.cb_source.addItem("Bot", "bot")
@@ -63,6 +64,7 @@ class TrainingTab(QWidget):
             "- 포지션을 보여주고, 보드에서 기물을 클릭해 다음 수를 둔다. 노테이션 몰라도 된다.",
             "- 정답 → 잠깐 피드백 후 다음 문제. 오답 → 정답을 보드에 화살표로 보여주고, 같은 문제를 곧바로 다시 낸다.",
             "- Drill 모드는 자주 틀린 문제와 실수에서 파생된 문제를 더 자주 뽑는다.",
+            "- 노테이션 배우기: 기물 글자부터 시작해, 마지막엔 기보만 보고 머릿속으로 보드를 그리는 것까지 단계별로 배운다.",
         ]:
             dlay.addWidget(theme.label(line, role="muted"))
 
@@ -97,6 +99,11 @@ class TrainingTab(QWidget):
 
     def _start(self) -> None:
         mode = self.cb_mode.currentData()
+        if mode == "notation":
+            from ui.notation import NotationDialog
+
+            NotationDialog(self).exec()
+            return
         soft = mode == "recall"
         items = db.problems_due(
             source=self._src(),
