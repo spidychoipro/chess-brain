@@ -38,6 +38,8 @@ DEFAULTS: Dict[str, Any] = {
     "stockfish": {
         "path": "",
         "depth": 12,
+        "threads": 0,            # 0 = CPU 코어 자동 (예전엔 1스레드라 느렸음)
+        "hash_mb": 256,
     },
     "mistakes": {
         "loss_threshold": 0.80,  # pawn 단위 손실 임계값

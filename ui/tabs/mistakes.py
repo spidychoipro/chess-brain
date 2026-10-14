@@ -101,8 +101,10 @@ class MistakesTab(QWidget):
         src = None if source == "both" else source
         only_wrong = self.cb_only_wrong.isChecked()
         counts = db.mistake_counts(src)
+        gc = db.game_counts(src)
         self.lbl_stats.setText(
-            f"전체 {counts['total']}  ·  지금 복습할 것(due) {counts['due']}  ·  아직 안 본 것 {counts['unreviewed']}"
+            f"전체 {counts['total']}  ·  지금 복습할 것(due) {counts['due']}  ·  "
+            f"아직 안 본 것 {counts['unreviewed']}  ·  미분석 게임 {gc['pending']}"
         )
         rows = db.list_mistakes(source=src, only_wrong=only_wrong)
         self.table.setRowCount(0)
@@ -165,7 +167,9 @@ class MistakesTab(QWidget):
         if self._worker is not None and self._worker.isRunning():
             return
         self.btn_analyze.setEnabled(False)
-        self._worker = PipelineWorker(pipeline.analyze_mistakes, cfg=cfg, source=source)
+        self._worker = PipelineWorker(
+            pipeline.analyze_mistakes, cfg=cfg, source=source, auto_sync=True
+        )
         self._worker.message.connect(lambda m: self.lbl_stats.setText(m))
         self._worker.failed.connect(self._on_failed)
         self._worker.done.connect(self._on_analyzed)
@@ -177,5 +181,30 @@ class MistakesTab(QWidget):
         self.refresh()
 
     def _on_analyzed(self, result: dict) -> None:
-        QMessageBox.information(self, "실수 분석", f"완료: 실수 {result.get('mistakes', 0)}개")
+        games = int(result.get("games", 0) or 0)
+        mistakes = int(result.get("mistakes", 0) or 0)
+        problems = int(result.get("problems", 0) or 0)
+        reason = result.get("reason", "")
+        if mistakes:
+            msg = f"게임 {games}개 분석 완료 — 실수 {mistakes}개 / 복습문제 {problems}개."
+        elif games:
+            msg = (
+                f"게임 {games}개 분석 완료 — 손실 0.8 을 넘는 실수는 없었다.\n"
+                "실수가 너무 적게 잡히면 설정에서 임계값을 낮춰라."
+            )
+        elif reason == "all_analyzed":
+            msg = "새로 분석할 게임이 없다. 이미 다 분석된 상태다."
+        elif not result.get("folder_ok", True):
+            msg = (
+                "분석할 게임이 없고, 로컬 PGN 폴더도 못 찾았다:\n"
+                f"{result.get('folder', '') or '(비어 있음)'}\n"
+                "설정에서 실제 폴더를 고르거나, 드라이브 문자(X:)를 쓰려면 "
+                "WinFsp 설치 후 '드라이브 마운트'가 붙어 있어야 한다."
+            )
+        else:
+            msg = (
+                "분석할 게임이 없다. 먼저 PGN 을 가져와야 한다.\n"
+                "'설정 → 로컬 동기화'로 폴더를 읽거나 'rclone 으로 받기'로 드라이브에서 받아라."
+            )
+        QMessageBox.information(self, "실수 분석", msg)
         self.refresh()

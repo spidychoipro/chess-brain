@@ -1,18 +1,19 @@
 """Reusable Qt widgets.
 
-The review panel is the heart of the app: show a line, force me to *type*
-the next move from memory, then nudge the SM-2 schedule. No board, no
-autocomplete - that is the point.
+The review panel is the heart of the app. It shows the position on a real
+board and you answer by *moving a piece*, not by typing SAN - notation is a
+skill nobody should need to review their own mistakes. When the answer is
+wrong the correct move is drawn as an arrow so it stays visible.
 """
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+import chess
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
-    QLineEdit,
     QProgressBar,
     QPushButton,
     QVBoxLayout,
@@ -22,29 +23,26 @@ from PySide6.QtWidgets import (
 from core import db
 from core import sr as sr_mod
 from ui import theme
+from ui.board import ChessBoard
 
 
-def _canonical_san(fen: str, user_input: str) -> Optional[str]:
-    """Return the canonical SAN for the user's move, or None if illegal."""
-    # python-chess import 는 무겁다. SAN 입력 화면을 실제로 열 때만 로드.
-    import chess
-
-    board = chess.Board(fen)
+def _uci_of(fen: str, san: str) -> Optional[str]:
+    """SAN -> UCI. 보드에 정답 화살표를 그리려고 쓴다."""
+    if not san:
+        return None
     try:
-        move = board.parse_san(user_input.strip())
+        board = chess.Board(fen)
+        return board.parse_san(san).uci()
     except Exception:
         return None
-    if move not in board.legal_moves:
-        return None
-    return board.san(move)
 
 
 class ReviewPanel(QWidget):
-    """SAN-input spaced-repetition drill over a list of items."""
+    """Board-input spaced-repetition drill over a list of items."""
 
     finished = Signal(dict)
 
-    FEEDBACK_MS = 650
+    FEEDBACK_MS = 900
 
     def __init__(
         self,
@@ -63,6 +61,7 @@ class ReviewPanel(QWidget):
         self.done = 0
         self.correct_first_try = 0
         self.attempted: set = set()
+        self._last_uci: Optional[str] = None
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -82,54 +81,51 @@ class ReviewPanel(QWidget):
         self.progress.setTextVisible(False)
         self.progress.setFixedHeight(12)
 
-        # -- question card --------------------------------------------------
-        self.lbl_section = theme.label("지금까지의 기보", role="caption")
-        self.lbl_context = theme.label("", parent=None)
-        self.lbl_context.setObjectName("LineText")
+        # -- board ----------------------------------------------------------
+        self.board = ChessBoard()
+        self.board.moveMade.connect(self._on_move)
+        self.board.movePlayedUci.connect(self._remember_uci)
+
+        # -- side info ------------------------------------------------------
+        self.lbl_section = theme.label("", role="caption")
+        self.lbl_context = theme.label("", role="muted")
         self.lbl_context.setWordWrap(True)
         self.lbl_context.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.lbl_context.setMinimumHeight(90)
-        self.lbl_context.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
-        self.lbl_prompt = theme.label("다음 수를 SAN 으로 입력하세요", role="muted")
+        self.lbl_prompt = theme.label(
+            "보드에서 다음 수를 두세요. (수를 옮기려면 기물 → 도착칸 클릭)", role="muted"
+        )
+        self.lbl_prompt.setWordWrap(True)
 
-        self.input = QLineEdit()
-        self.input.setObjectName("AnswerInput")
-        self.input.setPlaceholderText("예: Nf3   exd5   O-O   Bxc6+")
-        self.input.returnPressed.connect(self._submit)
-
-        self.btn_submit = QPushButton("제출 (Enter)")
-        self.btn_submit.setProperty("variant", "primary")
-        self.btn_submit.clicked.connect(self._submit)
-
-        input_row = QHBoxLayout()
-        input_row.addWidget(self.input, 1)
-        input_row.addWidget(self.btn_submit)
+        self.btn_reveal = QPushButton("모르겠음 (정답 보기)")
+        self.btn_reveal.setProperty("variant", "ghost")
+        self.btn_reveal.clicked.connect(self._reveal)
 
         self.lbl_feedback = theme.label("", role="small")
+        self.lbl_feedback.setWordWrap(True)
 
-        card = theme.card()
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(20, 18, 20, 18)
-        card_layout.setSpacing(12)
-        card_layout.addWidget(self.lbl_section)
-        card_layout.addWidget(self.lbl_context)
-        card_layout.addWidget(self.lbl_prompt)
-        card_layout.addLayout(input_row)
-        card_layout.addWidget(self.lbl_feedback)
+        side = QVBoxLayout()
+        side.setSpacing(12)
+        side.addWidget(self.lbl_section)
+        side.addWidget(self.lbl_context)
+        side.addWidget(self.lbl_prompt)
+        side.addWidget(self.btn_reveal)
+        side.addWidget(self.lbl_feedback)
+        side.addStretch(1)
 
-        self.lbl_hint = theme.label(
-            "Enter 로 제출 · 보드 없이 머릿속에서 말 배치를 떠올리는 훈련", role="small"
-        )
+        body = QHBoxLayout()
+        body.setSpacing(18)
+        body.addWidget(self.board, 3)
+        side_wrap = QWidget()
+        side_wrap.setLayout(side)
+        body.addWidget(side_wrap, 2)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 18)
         root.setSpacing(14)
         root.addLayout(header)
         root.addWidget(self.progress)
-        root.addWidget(card)
-        root.addStretch(1)
-        root.addWidget(self.lbl_hint)
+        root.addLayout(body, 1)
 
         self._show_current()
 
@@ -149,16 +145,23 @@ class ReviewPanel(QWidget):
         ctx = item.get("context_sans") or "(첫 수라 보여줄 기보가 없음)"
         self.lbl_context.setText(ctx)
         self.lbl_section.setText(self._section_text(item))
+        self.lbl_prompt.setText(
+            "보드에서 다음 수를 두세요. (기물 → 도착칸 클릭)"
+        )
         self.lbl_feedback.setText("")
         theme.set_state(self.lbl_feedback, "muted")
-        self.input.clear()
-        self.input.setEnabled(True)
-        self.input.setFocus()
+        self._last_uci = None
+        self.board.set_position(item["fen"])
+        self.board.clear_marks()
+        self.board.set_interactive(True)
+        self.btn_reveal.setEnabled(True)
 
     def _section_text(self, item: Dict[str, Any]) -> str:
         src = {"bot": "봇전", "human": "사람전"}.get(item.get("source"), item.get("source", ""))
         ply = item.get("ply")
-        return f"지금까지의 기보  ·  {src}  ·  {ply}수째" if ply else f"지금까지의 기보  ·  {src}"
+        turn = "흑" if self.board.board.turn == chess.BLACK else "백"
+        tail = f"{src} · {ply}수째 · 내 차례({turn})" if ply else f"{src} · 내 차례({turn})"
+        return tail
 
     def _finish(self) -> None:
         self.finished.emit(
@@ -174,46 +177,72 @@ class ReviewPanel(QWidget):
             return item.get("best_san") or ""
         return item.get("target_san") or ""
 
-    def _submit(self) -> None:
-        if not self.queue or not self.input.isEnabled():
-            return
-        text = self.input.text().strip()
-        if not text:
+    def _remember_uci(self, uci: str) -> None:
+        self._last_uci = uci
+
+    def _on_move(self, san: str) -> None:
+        if not self.queue or not self.board.is_interactive():
             return
         item = self.queue[0]
         target = self._target(item)
-        canonical = _canonical_san(item["fen"], text)
-
-        if canonical is None:
-            self.lbl_feedback.setText("지금 포지션에서 둘 수 없는 수야. 기보를 다시 떠올려보자.")
-            theme.set_state(self.lbl_feedback, "muted")
-            self.input.selectAll()
-            return
 
         key = item.get("id")
         first_try = key not in self.attempted
         self.attempted.add(key)
 
-        if canonical == target:
+        self.board.set_interactive(False)
+        self.btn_reveal.setEnabled(False)
+
+        if target and san == target:
             self._apply(item, sr_mod.GRADE_GOOD)
             if first_try:
                 self.correct_first_try += 1
             self.done += 1
             self.queue.pop(0)
             self.progress.setValue(self.done)
-            self.input.setEnabled(False)
-            self.lbl_feedback.setText(f"정답!  {target}")
+            if self._last_uci:
+                self.board.show_hint(self._last_uci)
+            self.lbl_feedback.setText(f"정답!  ({target})")
             theme.set_state(self.lbl_feedback, "success")
             self._timer.start(self.FEEDBACK_MS)
         else:
             self._apply(item, sr_mod.GRADE_AGAIN)
-            self.lbl_feedback.setText(f"오답. 정답은 {target} 이었어. 조금 뒤에 이 문제를 다시 볼게.")
+            if self._last_uci:
+                self.board.show_wrong(self._last_uci)
+            target_uci = _uci_of(item["fen"], target)
+            if target_uci:
+                self.board.show_hint(target_uci)
+                msg = "오답. 초록 화살표가 정답이야. 조금 뒤에 이 문제를 다시 낼게."
+            else:
+                msg = "오답. 이 문제는 정답 정보가 없어서 넘어갈게."
+            if target:
+                msg += f"  ({target})"
+            self.lbl_feedback.setText(msg)
             theme.set_state(self.lbl_feedback, "danger")
             # 오답은 즉시 재도전: 같은 문제를 큐 맨 앞에 다시 둔다.
             self.queue.pop(0)
             self.queue.insert(0, item)
-            self.input.clear()
-            self.input.setFocus()
+            self._timer.start(self.FEEDBACK_MS)
+
+    def _reveal(self) -> None:
+        """모르겠음: 정답 화살표만 보여주고 오답 처리한다(바로 큐 재투입)."""
+        if not self.queue or not self.board.is_interactive():
+            return
+        item = self.queue[0]
+        target = self._target(item)
+        target_uci = _uci_of(item["fen"], target)
+        if target_uci:
+            self.board.show_hint(target_uci)
+        self.board.set_interactive(False)
+        self.btn_reveal.setEnabled(False)
+        self._apply(item, sr_mod.GRADE_AGAIN)
+        self.lbl_feedback.setText(
+            f"정답: 초록 화살표  ({target})" if target else "정답 정보가 없는 문제야."
+        )
+        theme.set_state(self.lbl_feedback, "danger")
+        self.queue.pop(0)
+        self.queue.insert(0, item)
+        self._timer.start(self.FEEDBACK_MS + 600)
 
     def _after_feedback(self) -> None:
         self._show_current()
@@ -254,7 +283,7 @@ class ReviewDialog(QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.resize(800, 560)
+        self.resize(960, 700)
         self.result_stats: Dict[str, Any] = {}
         self.panel = ReviewPanel(
             items,
