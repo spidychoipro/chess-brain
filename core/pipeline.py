@@ -104,7 +104,12 @@ def sync_local_folder(
     db.init_db()
     root = cfg_mod.get(cfg, "local.pgn_folder", "") or ""
     if not root or not os.path.isdir(root):
-        raise ValueError("설정에서 로컬 PGN 폴더를 먼저 지정하세요.")
+        raise ValueError(
+            "로컬 PGN 폴더를 찾을 수 없습니다: "
+            f"{root or '(비어 있음)'}\n"
+            "설정에서 실제 폴더를 고르세요. 드라이브 문자(예: X:)를 쓴다면 "
+            "WinFsp 설치 후 '드라이브 마운트'가 붙어 있어야 그 드라이브가 보인다."
+        )
 
     _note(on_progress, f"스캔 중: {root}")
     pgn_files = []
@@ -318,21 +323,63 @@ def analyze_mistakes(
     cfg: Dict[str, Any],
     source: str = "human",
     on_progress: Progress = None,
+    auto_sync: bool = False,
 ) -> Dict[str, int]:
-    """Run Stockfish over not-yet-analyzed games to collect my mistakes."""
+    """Run Stockfish over not-yet-analyzed games to collect my mistakes.
+
+    ``auto_sync`` 를 켜면 분석할 게임이 하나도 없을 때 로컬 PGN 폴더를 먼저
+    읽는다. 사용자가 동기화를 깜빡하고 분석 버튼을 먼저 눌러도 '실수 0개'로
+    끝나지 않고 버튼 한 번에 결과까지 가게 하려는 것.
+    """
     db.init_db()
     sf_path = cfg_mod.get(cfg, "stockfish.path", "")
-    depth = int(cfg_mod.get(cfg, "stockfish.depth", 12) or 12)
+    raw_depth = int(cfg_mod.get(cfg, "stockfish.depth", 12) or 12)
+    # depth 27 같은 값이 들어오면 분석이 사실상 안 끝난다. 안전하게 자른다.
+    depth = max(4, min(16, raw_depth))
+    if depth != raw_depth:
+        _note(on_progress, f"depth {raw_depth} → {depth} 로 조정(너무 깊으면 안 끝남).")
     threshold = float(cfg_mod.get(cfg, "mistakes.loss_threshold", 0.80) or 0.80)
+    threads = int(cfg_mod.get(cfg, "stockfish.threads", 0) or 0)
+    hash_mb = int(cfg_mod.get(cfg, "stockfish.hash_mb", 256) or 256)
 
     if not engine_mod.engine_available(sf_path):
         raise ValueError("설정에서 stockfish.exe 경로를 지정하세요.")
 
     username, fallback = _user_settings(cfg)
     pending = db.games_needing_analysis(source)
+
+    if not pending and auto_sync:
+        root = cfg_mod.get(cfg, "local.pgn_folder", "") or ""
+        if root and os.path.isdir(root):
+            _note(on_progress, "분석할 게임이 없어 로컬 PGN 폴더를 먼저 읽는다...")
+            try:
+                sync_local_folder(cfg, on_progress)
+            except Exception as exc:  # 동기화 실패는 분석 결과를 막지 않는다
+                _note(on_progress, f"로컬 동기화 실패: {exc}")
+            pending = db.games_needing_analysis(source)
+
     if not pending:
-        _note(on_progress, f"분석할 {source} 게임이 없습니다.")
-        return {"games": 0, "mistakes": 0, "problems": 0}
+        counts = db.game_counts(source)
+        root = cfg_mod.get(cfg, "local.pgn_folder", "") or ""
+        folder_ok = bool(root) and os.path.isdir(root)
+        # 게임이 아예 없어서 0인지, 다 분석해서 0인지 나눠서 알려준다.
+        reason = "no_games" if counts["total"] == 0 else "all_analyzed"
+        if reason == "all_analyzed":
+            _note(on_progress, "새로 분석할 게임이 없습니다. (이미 다 분석됨)")
+        elif not folder_ok:
+            _note(on_progress, f"분석할 게임이 없고 로컬 PGN 폴더도 못 찾음: {root or '(비어 있음)'}")
+        else:
+            _note(on_progress, "분석할 게임이 없습니다. 먼저 PGN 을 동기화하세요.")
+        return {
+            "games": 0,
+            "mistakes": 0,
+            "problems": 0,
+            "games_total": counts["total"],
+            "pending_before": 0,
+            "reason": reason,
+            "folder_ok": folder_ok,
+            "folder": root,
+        }
 
     # 같은 파일을 두 번 내려받지 않도록 file_id 로 묶는다.
     by_file: Dict[str, List[Dict[str, Any]]] = {}
@@ -343,7 +390,10 @@ def analyze_mistakes(
     service = None
     if any(not fid.startswith("local:") for fid in by_file):
         service = drive.build_service()
-    with engine_mod.Stockfish(sf_path, depth) as sf:
+    with engine_mod.Stockfish(
+        sf_path, depth, threads=threads or None, hash_mb=hash_mb
+    ) as sf:
+        _note(on_progress, f"분석 시작 (depth {depth}, 스레드 {sf.threads})")
         for file_id, games in by_file.items():
             if file_id.startswith("local:"):
                 with open(file_id[len("local:") :], "r", encoding="utf-8", errors="replace") as f:
@@ -406,4 +456,9 @@ def analyze_mistakes(
                             stats["problems"] += 1
                 db.mark_game_analyzed(gid)
     _note(on_progress, f"완료: 실수 {stats['mistakes']} / 복습문제 {stats['problems']}")
-    return stats
+    return {
+        **stats,
+        "games_total": db.game_counts(source)["total"],
+        "pending_before": len(pending),
+        "reason": "",
+    }

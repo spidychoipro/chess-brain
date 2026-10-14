@@ -226,7 +226,8 @@ class SettingsTab(QWidget):
         sf_row.addWidget(self.btn_browse_sf)
 
         self.sp_depth = QSpinBox()
-        self.sp_depth.setRange(4, 30)
+        # 예전엔 4..30 이었는데 27 같은 값이 들어가면 분석이 사실상 안 끝난다.
+        self.sp_depth.setRange(6, 16)
         self.sp_threshold = QDoubleSpinBox()
         self.sp_threshold.setRange(0.1, 10.0)
         self.sp_threshold.setSingleStep(0.1)
@@ -235,6 +236,13 @@ class SettingsTab(QWidget):
         sf_form = QFormLayout()
         sf_form.addRow(theme.label("Stockfish 경로", role="muted"), sf_row)
         sf_form.addRow(theme.label("분석 depth", role="muted"), self.sp_depth)
+        sf_form.addRow(
+            "",
+            theme.label(
+                "낮을수록 빠름 · 12 권장. 16은 확실히 더 느리다(한 판에 수 분).",
+                role="small",
+            ),
+        )
         sf_form.addRow(theme.label("실수 임계값(loss)", role="muted"), self.sp_threshold)
 
         self.lbl_sf = theme.label(
@@ -260,7 +268,7 @@ class SettingsTab(QWidget):
         self.cb_source.addItem("Both", "both")
         self.cb_mode = QComboBox()
         self.cb_mode.addItem("다음 수 맞추기 (Recall)", "recall")
-        self.cb_mode.addItem("노테이션 연습 (Drill)", "drill")
+        self.cb_mode.addItem("실수 집중 훈련 (Drill)", "drill")
 
         df = QFormLayout()
         df.addRow(theme.label("트레이닝 기본 소스", role="muted"), self.cb_source)
@@ -305,6 +313,11 @@ class SettingsTab(QWidget):
         outer.setContentsMargins(24, 20, 16, 20)
         outer.setSpacing(14)
         outer.addWidget(theme.label("설정", role="h1"))
+        # 눌러도 됐는지 안 됐는지 모르겠다는 문제가 있어서, 마지막 동작 결과를
+        # 제목 아래에 항상 남긴다(로그까지 안 내려가도 보이게).
+        self.lbl_status = theme.label("준비됨.", role="muted")
+        self.lbl_status.setWordWrap(True)
+        outer.addWidget(self.lbl_status)
         outer.addWidget(scroll, 1)
 
         self._load_into_widgets()
@@ -328,7 +341,7 @@ class SettingsTab(QWidget):
         self.in_rclone_bin.setText(cfg_mod.get(c, "rclone.binary", "") or "")
         self.in_rclone_conf.setText(cfg_mod.get(c, "rclone.config", "") or "")
         self.in_mount_point.setText(cfg_mod.get(c, "rclone.mount_point", "") or "")
-        self.sp_depth.setValue(int(cfg_mod.get(c, "stockfish.depth", 12) or 12))
+        self.sp_depth.setValue(max(6, min(16, int(cfg_mod.get(c, "stockfish.depth", 12) or 12))))
         self.sp_threshold.setValue(float(cfg_mod.get(c, "mistakes.loss_threshold", 0.80) or 0.80))
         idx = self.cb_source.findData(cfg_mod.get(c, "training.default_source", "bot"))
         self.cb_source.setCurrentIndex(idx if idx >= 0 else 0)
@@ -365,6 +378,55 @@ class SettingsTab(QWidget):
 
     def _log(self, msg: str) -> None:
         self.log.appendPlainText(msg)
+
+    def _set_status(self, text: str, state: str = "muted") -> None:
+        self.lbl_status.setText(text)
+        theme.set_state(self.lbl_status, state)
+
+    def _summarize(self, result: dict) -> str:
+        if not isinstance(result, dict):
+            return str(result)
+        if result.get("mounted"):
+            return f"드라이브 마운트됨: {result.get('mount_point', '')}"
+        if "problems" in result:
+            tail = f" · 내려받음 {result['downloaded']}" if "downloaded" in result else ""
+            return f"게임 {result.get('games', 0)} · 새 문제 {result.get('problems', 0)}{tail}"
+        if "files" in result:
+            return (
+                f"파일 {result.get('files', 0)} · 새 게임 {result.get('new_games', 0)}"
+                f" · 문제 {result.get('problems', 0)}"
+            )
+        return str(result)
+
+    def _run(
+        self,
+        btn,
+        fn,
+        busy_text: str,
+        on_done=None,
+        on_failed=None,
+        **kwargs,
+    ) -> bool:
+        """워커 실행 + 버튼에 '진행 중' 표시(눌렀는지 알 수 있게)."""
+        if self._worker is not None and self._worker.isRunning():
+            self._log("이미 작업이 실행 중입니다.")
+            return False
+        orig = btn.text()
+        self._worker = PipelineWorker(fn, **kwargs)
+        self._worker.message.connect(self._log)
+        self._worker.done.connect(on_done or self._on_done)
+        self._worker.failed.connect(on_failed or self._on_sync_failed)
+        btn.setEnabled(False)
+        btn.setText(busy_text)
+        self._set_status(f"{busy_text} ...", "muted")
+
+        def _restore() -> None:
+            btn.setEnabled(True)
+            btn.setText(orig)
+
+        self._worker.finished.connect(_restore)
+        self._worker.start()
+        return True
 
     _CRED_STEPS = (
         "credentials.json 이 없음. 드라이브를 쓰려면 처음 한 번만 만들면 됨:\n"
@@ -451,12 +513,13 @@ class SettingsTab(QWidget):
             self._log("이미 작업이 실행 중입니다.")
             return
         self._log("Stockfish 찾는 중...")
-        self._worker = PipelineWorker(self._run_detect)
-        self._worker.done.connect(self._on_detect_done)
-        self._worker.failed.connect(lambda e: self._log(f"자동 감지 실패: {e}"))
-        self.btn_detect_sf.setEnabled(False)
-        self._worker.finished.connect(lambda: self.btn_detect_sf.setEnabled(True))
-        self._worker.start()
+        self._run(
+            self.btn_detect_sf,
+            self._run_detect,
+            "찾는 중…",
+            on_done=self._on_detect_done,
+            on_failed=lambda e: self._log(f"자동 감지 실패: {e}"),
+        )
 
     def _run_detect(self, on_progress=None) -> dict:
         from core import engine as engine_mod
@@ -501,13 +564,13 @@ class SettingsTab(QWidget):
         if self._worker is not None and self._worker.isRunning():
             self._log("이미 작업이 실행 중입니다.")
             return
-        self._worker = PipelineWorker(pipeline.mount_drive, cfg=self.cfg)
-        self._worker.message.connect(self._log)
-        self._worker.done.connect(self._on_mount_done)
-        self._worker.failed.connect(self._on_sync_failed)
-        self.btn_mount.setEnabled(False)
-        self._worker.finished.connect(lambda: self.btn_mount.setEnabled(True))
-        self._worker.start()
+        self._run(
+            self.btn_mount,
+            pipeline.mount_drive,
+            "마운트 중…",
+            on_done=self._on_mount_done,
+            cfg=self.cfg,
+        )
 
     def _unmount_drive(self) -> None:
         from core import pipeline
@@ -515,20 +578,25 @@ class SettingsTab(QWidget):
         if self._worker is not None and self._worker.isRunning():
             self._log("이미 작업이 실행 중입니다.")
             return
-        self._worker = PipelineWorker(pipeline.unmount_drive, cfg=self.cfg)
-        self._worker.message.connect(self._log)
-        self._worker.done.connect(lambda _r: self._on_mount_done({}))
-        self._worker.failed.connect(lambda e: self._log(f"실패: {e}"))
-        self._worker.start()
+        self._run(
+            self.btn_unmount,
+            pipeline.unmount_drive,
+            "해제 중…",
+            on_done=lambda _r: self._on_mount_done({}),
+            cfg=self.cfg,
+        )
 
     def _on_mount_done(self, result: dict) -> None:
         self._refresh_mount_status()
         point = result.get("mount_point")
         if point:
             self._log(f"드라이브 마운트 완료: {point}")
+            self._set_status(f"마운트됨: {point}", "success")
             # 붙였으면 바로 로컬 PGN 폴더로 써먹을 수 있게 안내 겸 자동 지정 제안
             if not self.in_local.text().strip():
                 self._use_mount_as_local()
+        else:
+            self._set_status("마운트 해제됨.", "muted")
 
     def _use_mount_as_local(self) -> None:
         point = self.in_mount_point.text().strip()
@@ -563,13 +631,12 @@ class SettingsTab(QWidget):
         if self._worker is not None and self._worker.isRunning():
             self._log("이미 작업이 실행 중입니다.")
             return
-        self._worker = PipelineWorker(pipeline.sync_local_folder, cfg=self.cfg)
-        self._worker.message.connect(self._log)
-        self._worker.done.connect(self._on_done)
-        self._worker.failed.connect(lambda e: self._log(f"실패: {e}"))
-        self.btn_local_sync.setEnabled(False)
-        self._worker.finished.connect(lambda: self.btn_local_sync.setEnabled(True))
-        self._worker.start()
+        self._run(
+            self.btn_local_sync,
+            pipeline.sync_local_folder,
+            "동기화 중…",
+            cfg=self.cfg,
+        )
 
     def _sync(self) -> None:
         from core import pipeline
@@ -578,13 +645,7 @@ class SettingsTab(QWidget):
         if self._worker is not None and self._worker.isRunning():
             self._log("이미 작업이 실행 중입니다.")
             return
-        self._worker = PipelineWorker(pipeline.sync_drive, cfg=self.cfg)
-        self._worker.message.connect(self._log)
-        self._worker.done.connect(self._on_done)
-        self._worker.failed.connect(self._on_sync_failed)
-        self.btn_sync.setEnabled(False)
-        self._worker.finished.connect(lambda: self.btn_sync.setEnabled(True))
-        self._worker.start()
+        self._run(self.btn_sync, pipeline.sync_drive, "동기화 중…", cfg=self.cfg)
 
     def _pull_drive(self) -> None:
         from core import pipeline
@@ -596,13 +657,12 @@ class SettingsTab(QWidget):
         if self._worker is not None and self._worker.isRunning():
             self._log("이미 작업이 실행 중입니다.")
             return
-        self._worker = PipelineWorker(pipeline.pull_drive_to_local, cfg=self.cfg)
-        self._worker.message.connect(self._log)
-        self._worker.done.connect(self._on_done)
-        self._worker.failed.connect(self._on_sync_failed)
-        self.btn_pull.setEnabled(False)
-        self._worker.finished.connect(lambda: self.btn_pull.setEnabled(True))
-        self._worker.start()
+        self._run(
+            self.btn_pull,
+            pipeline.pull_drive_to_local,
+            "받는 중…",
+            cfg=self.cfg,
+        )
 
     def _browse_rclone(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -631,15 +691,15 @@ class SettingsTab(QWidget):
         if self._worker is not None and self._worker.isRunning():
             self._log("이미 작업이 실행 중입니다.")
             return
-        self._worker = PipelineWorker(pipeline.pull_rclone_to_local, cfg=self.cfg)
-        self._worker.message.connect(self._log)
-        self._worker.done.connect(self._on_done)
-        self._worker.failed.connect(self._on_sync_failed)
-        self.btn_rclone.setEnabled(False)
-        self._worker.finished.connect(lambda: self.btn_rclone.setEnabled(True))
-        self._worker.start()
+        self._run(
+            self.btn_rclone,
+            pipeline.pull_rclone_to_local,
+            "받는 중…",
+            cfg=self.cfg,
+        )
 
     def _on_sync_failed(self, err: str) -> None:
+        self._set_status(f"실패 — {err}", "danger")
         # 자격증명/도구가 없어서 실패한 경우엔 다음에 뭘 할지까지 보여준다.
         if "credentials.json" in err:
             self._log(self._CRED_STEPS)
@@ -665,4 +725,5 @@ class SettingsTab(QWidget):
 
     def _on_done(self, result: dict) -> None:
         self._log(f"완료: {result}")
+        self._set_status(f"완료 — {self._summarize(result)}", "success")
         self.config_saved.emit()

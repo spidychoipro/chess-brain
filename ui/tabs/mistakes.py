@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import time
 
+import chess
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -24,7 +26,8 @@ from PySide6.QtWidgets import (
 from core import config as cfg_mod
 from core import db
 from ui import theme
-from ui.widgets import ReviewDialog
+from ui.board import ChessBoard
+from ui.widgets import ReviewDialog, _uci_of
 from ui.worker import PipelineWorker
 
 
@@ -38,6 +41,7 @@ class MistakesTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None
+        self._rows: list = []
 
         self.cb_source = QComboBox()
         self.cb_source.addItem("Human", "human")
@@ -83,7 +87,30 @@ class MistakesTab(QWidget):
         )
         layout.addWidget(toolbar)
         layout.addWidget(self.lbl_stats)
-        layout.addWidget(self.table, 1)
+
+        # 노테이션을 모르면 SAN 표가 무의미하니, 행을 고르면 보드가 뜨게 한다.
+        self.board = ChessBoard()
+        self.board.set_interactive(False)
+        self.board.setMinimumWidth(320)
+        self.lbl_preview_move = theme.label("", role="small")
+        self.lbl_preview_move.setWordWrap(True)
+        self.lbl_preview = theme.label("행을 고르면 여기에 포지션이 뜬다.", role="muted")
+        self.lbl_preview.setWordWrap(True)
+
+        side = QWidget()
+        side_l = QVBoxLayout(side)
+        side_l.setContentsMargins(0, 0, 0, 0)
+        side_l.setSpacing(8)
+        side_l.addWidget(self.board, 1)
+        side_l.addWidget(self.lbl_preview_move)
+        side_l.addWidget(self.lbl_preview)
+
+        split = QSplitter(Qt.Horizontal)
+        split.addWidget(self.table)
+        split.addWidget(side)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
+        layout.addWidget(split, 1)
 
         self.btn_refresh = QPushButton("새로고침")
         self.btn_refresh.setProperty("variant", "ghost")
@@ -92,7 +119,37 @@ class MistakesTab(QWidget):
         self.btn_review.clicked.connect(self._review)
         self.cb_source.currentIndexChanged.connect(self.refresh)
         self.cb_only_wrong.stateChanged.connect(self.refresh)
+        self.table.currentCellChanged.connect(lambda *_: self._on_row())
+        self.table.itemDoubleClicked.connect(lambda *_: self._review_current())
         self.refresh()
+
+    def _on_row(self) -> None:
+        idx = self.table.currentRow()
+        if idx < 0 or idx >= len(self._rows):
+            self.board.set_position(chess.STARTING_FEN)
+            self.board.clear_marks()
+            self.lbl_preview_move.setText("")
+            self.lbl_preview.setText("행을 고르면 여기에 포지션이 뜬다.")
+            return
+        r = self._rows[idx]
+        fen = r.get("fen") or chess.STARTING_FEN
+        self.board.set_position(fen)
+        self.board.clear_marks()
+        my_san = r.get("my_san") or ""
+        best_san = r.get("best_san") or ""
+        my_uci = _uci_of(fen, my_san)
+        best_uci = _uci_of(fen, best_san)
+        if my_uci:
+            self.board.show_wrong(my_uci)
+        if best_uci:
+            self.board.show_hint(best_uci)
+        self.lbl_preview_move.setText(
+            f"빨강 화살표 = 내가 둔 수  ·  초록 화살표 = 엔진 정답"
+        )
+        self.lbl_preview.setText(
+            f"내 수 {my_san or '?'}   →   정답 {best_san or '?'}\n"
+            f"(손실 {r.get('loss', 0):.2f})  한 번 더 복습하려면 '실수 복습 시작'을 눌러라."
+        )
 
     # -- data ---------------------------------------------------------------
 
@@ -101,10 +158,13 @@ class MistakesTab(QWidget):
         src = None if source == "both" else source
         only_wrong = self.cb_only_wrong.isChecked()
         counts = db.mistake_counts(src)
+        gc = db.game_counts(src)
         self.lbl_stats.setText(
-            f"전체 {counts['total']}  ·  지금 복습할 것(due) {counts['due']}  ·  아직 안 본 것 {counts['unreviewed']}"
+            f"전체 {counts['total']}  ·  지금 복습할 것(due) {counts['due']}  ·  "
+            f"아직 안 본 것 {counts['unreviewed']}  ·  미분석 게임 {gc['pending']}"
         )
         rows = db.list_mistakes(source=src, only_wrong=only_wrong)
+        self._rows = rows
         self.table.setRowCount(0)
         for r in rows:
             i = self.table.rowCount()
@@ -127,6 +187,21 @@ class MistakesTab(QWidget):
 
     def _cfg(self):
         return cfg_mod.load_config()
+
+    def _review_current(self) -> None:
+        idx = self.table.currentRow()
+        if idx < 0 or idx >= len(self._rows):
+            return
+        cfg = self._cfg()
+        dialog = ReviewDialog(
+            [self._rows[idx]],
+            "mistake",
+            wrong_due_seconds=int(cfg_mod.get(cfg, "sr.wrong_due_seconds", 600) or 600),
+            title="실수 하나 복습",
+            parent=self,
+        )
+        dialog.exec()
+        self.refresh()
 
     def _review(self) -> None:
         source = self.cb_source.currentData()
@@ -165,7 +240,9 @@ class MistakesTab(QWidget):
         if self._worker is not None and self._worker.isRunning():
             return
         self.btn_analyze.setEnabled(False)
-        self._worker = PipelineWorker(pipeline.analyze_mistakes, cfg=cfg, source=source)
+        self._worker = PipelineWorker(
+            pipeline.analyze_mistakes, cfg=cfg, source=source, auto_sync=True
+        )
         self._worker.message.connect(lambda m: self.lbl_stats.setText(m))
         self._worker.failed.connect(self._on_failed)
         self._worker.done.connect(self._on_analyzed)
@@ -177,5 +254,30 @@ class MistakesTab(QWidget):
         self.refresh()
 
     def _on_analyzed(self, result: dict) -> None:
-        QMessageBox.information(self, "실수 분석", f"완료: 실수 {result.get('mistakes', 0)}개")
+        games = int(result.get("games", 0) or 0)
+        mistakes = int(result.get("mistakes", 0) or 0)
+        problems = int(result.get("problems", 0) or 0)
+        reason = result.get("reason", "")
+        if mistakes:
+            msg = f"게임 {games}개 분석 완료 — 실수 {mistakes}개 / 복습문제 {problems}개."
+        elif games:
+            msg = (
+                f"게임 {games}개 분석 완료 — 손실 0.8 을 넘는 실수는 없었다.\n"
+                "실수가 너무 적게 잡히면 설정에서 임계값을 낮춰라."
+            )
+        elif reason == "all_analyzed":
+            msg = "새로 분석할 게임이 없다. 이미 다 분석된 상태다."
+        elif not result.get("folder_ok", True):
+            msg = (
+                "분석할 게임이 없고, 로컬 PGN 폴더도 못 찾았다:\n"
+                f"{result.get('folder', '') or '(비어 있음)'}\n"
+                "설정에서 실제 폴더를 고르거나, 드라이브 문자(X:)를 쓰려면 "
+                "WinFsp 설치 후 '드라이브 마운트'가 붙어 있어야 한다."
+            )
+        else:
+            msg = (
+                "분석할 게임이 없다. 먼저 PGN 을 가져와야 한다.\n"
+                "'설정 → 로컬 동기화'로 폴더를 읽거나 'rclone 으로 받기'로 드라이브에서 받아라."
+            )
+        QMessageBox.information(self, "실수 분석", msg)
         self.refresh()

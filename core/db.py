@@ -288,6 +288,33 @@ def games_needing_analysis(source: Optional[str] = None) -> List[Dict[str, Any]]
         conn.close()
 
 
+def game_counts(source: Optional[str] = None) -> Dict[str, int]:
+    """게임 수 요약. 분석 버튼이 '게임이 없어서 0'인지 '다 분석해서 0'인지
+    구분해서 말할 수 있게 하려고 둔다."""
+    where = ""
+    params: List[Any] = []
+    if source in ("bot", "human"):
+        where = "WHERE source=?"
+        params.append(source)
+    and_ = "AND" if where else "WHERE"
+    conn = connect()
+    try:
+        total = conn.execute(
+            f"SELECT COUNT(*) c FROM games {where}", params
+        ).fetchone()["c"]
+        analyzed = conn.execute(
+            f"SELECT COUNT(*) c FROM games {where} {and_} analyzed=1", params
+        ).fetchone()["c"]
+        pending = conn.execute(
+            f"SELECT COUNT(*) c FROM games {where} {and_} analyzed=0 "
+            f"AND file_id IS NOT NULL AND file_id != ''",
+            params,
+        ).fetchone()["c"]
+        return {"total": total, "analyzed": analyzed, "pending": pending}
+    finally:
+        conn.close()
+
+
 # --------------------------------------------------------------------------
 # mistakes
 # --------------------------------------------------------------------------

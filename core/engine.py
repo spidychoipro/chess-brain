@@ -19,6 +19,17 @@ def engine_available(path: str) -> bool:
     return bool(path) and os.path.isfile(path)
 
 
+def default_threads() -> int:
+    """분석용 스레드 수.
+
+    이 앱은 depth 6~20 사이의 *짧은* 탐색을 수백 번 돌린다. 이 구간에선
+    Stockfish Lazy SMP 의 동기화/하이퍼스레딩 오버헤드가 이득을 넘어서서
+    1스레드가 가장 빠르다(실측: depth12 1t 2.5s vs 8t 4.8s). 그래서 기본 1.
+    아주 깊게(depth 24+) 돌릴 때만 늘리는 게 낫다.
+    """
+    return 1
+
+
 # -- stockfish 자동 감지 ------------------------------------------------------
 
 # 이름에 CPU 명령셋이 들어간 빌드가 여러 개 있으면 빠른 것부터 고른다.
@@ -163,15 +174,29 @@ class MistakeResult:
 class Stockfish:
     """Thin wrapper so callers don't juggle process lifecycles."""
 
-    def __init__(self, path: str, depth: int = 12):
+    def __init__(
+        self,
+        path: str,
+        depth: int = 12,
+        threads: Optional[int] = None,
+        hash_mb: Optional[int] = None,
+    ):
         if not engine_available(path):
             raise FileNotFoundError(f"stockfish not found: {path}")
         self.path = path
         self.depth = depth
+        # 0/None 이면 자동. 기본이 1스레드라 분석이 유난히 느렸다.
+        self.threads = threads or default_threads()
+        self.hash_mb = hash_mb if hash_mb is not None else 256
         self._engine: Optional[chess.engine.SimpleEngine] = None
 
     def __enter__(self) -> "Stockfish":
         self._engine = chess.engine.SimpleEngine.popen_uci(self.path)
+        # 스레드/해시를 안 주면 1스레드라 실수 분석이 오래 걸린다.
+        try:
+            self._engine.configure({"Threads": int(self.threads), "Hash": int(self.hash_mb)})
+        except Exception:  # noqa: BLE001 - 엔진이 옵션을 안 받아도 그냥 진행
+            pass
         return self
 
     def __exit__(self, *exc: Any) -> None:

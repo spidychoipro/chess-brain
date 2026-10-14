@@ -30,7 +30,7 @@ class TrainingTab(QWidget):
 
         self.cb_mode = QComboBox()
         self.cb_mode.addItem("다음 수 맞추기 (Recall)", "recall")
-        self.cb_mode.addItem("노테이션 연습 (Drill)", "drill")
+        self.cb_mode.addItem("실수 집중 훈련 (Drill)", "drill")
 
         self.cb_source = QComboBox()
         self.cb_source.addItem("Bot", "bot")
@@ -58,10 +58,10 @@ class TrainingTab(QWidget):
         dlay = QVBoxLayout(desc)
         dlay.setContentsMargins(18, 16, 18, 16)
         dlay.setSpacing(8)
-        dlay.addWidget(theme.label("보드 없이 기보만 보고 다음 수를 떠올린다", role="h2"))
+        dlay.addWidget(theme.label("보드에서 말을 옮겨서 다음 수를 둔다", role="h2"))
         for line in [
-            "- 앞부분 기보를 보여주고, 다음 수를 SAN 으로 직접 입력한다. 보드·자동완성은 의도적으로 없다.",
-            "- 정답 → 잠깐 피드백 후 다음 문제. 오답 → 정답을 보여주고, 같은 문제를 곧바로 다시 낸다.",
+            "- 포지션을 보여주고, 보드에서 기물을 클릭해 다음 수를 둔다. 노테이션 몰라도 된다.",
+            "- 정답 → 잠깐 피드백 후 다음 문제. 오답 → 정답을 보드에 화살표로 보여주고, 같은 문제를 곧바로 다시 낸다.",
             "- Drill 모드는 자주 틀린 문제와 실수에서 파생된 문제를 더 자주 뽑는다.",
         ]:
             dlay.addWidget(theme.label(line, role="muted"))
@@ -109,7 +109,7 @@ class TrainingTab(QWidget):
             )
             return
         cfg = cfg_mod.load_config()
-        title = "다음 수 맞추기" if soft else "노테이션 연습"
+        title = "다음 수 맞추기" if soft else "실수 집중 훈련"
         dialog = ReviewDialog(
             items,
             "problem",

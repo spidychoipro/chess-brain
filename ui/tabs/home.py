@@ -22,7 +22,7 @@ class HomeTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.card_due_m = _stat_card("-", "복습할 실수 (due)")
-        self.card_due_p = _stat_card("-", "복습할 노테이션 (due)")
+        self.card_due_p = _stat_card("-", "복습할 문제 (due)")
         self.card_new = _stat_card("-", "아직 안 본 실수")
         self.card_today = _stat_card("-", "오늘 복습한 항목")
 
