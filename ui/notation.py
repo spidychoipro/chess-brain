@@ -581,7 +581,8 @@ class Stage3Read(_Stage):
         self.board.set_position(item["fen"])
         self.lbl_score.setText(f"{self.idx + 1} / {len(self.items)}")
         self.lbl_q.setText(f"이 수를 보드에서 두세요:   {item['san']}")
-        self.lbl_decode.setText(describe_san(item["san"]))
+        # 뜻풀이는 정답을 볼 때만 보여준다(미리 보여주면 답을 다 알려주는 셈).
+        self.lbl_decode.setText("")
         self.lbl_fb.setText("")
         theme.set_state(self.lbl_fb, "muted")
 
@@ -596,18 +597,16 @@ class Stage3Read(_Stage):
             self._lock(True)
             if self._last_uci:
                 self.board.show_hint(self._last_uci)
-            self.lbl_fb.setText(f"정답!   {item['san']} = {describe_san(item['san'])}")
+            self.lbl_decode.setText(describe_san(item["san"]))
+            self.lbl_fb.setText(f"정답!   {item['san']}")
             theme.set_state(self.lbl_fb, "success")
             self._timer.start(1300)
             return
         self._wrong_streak += 1
         if self._last_uci:
             self.board.show_wrong(self._last_uci)
-        if self._wrong_streak == 1:
-            self.lbl_fb.setText("그 수가 아니야. 다시 해봐.")
-            theme.set_state(self.lbl_fb, "danger")
-            return
-        self._show_answer()
+        self.lbl_fb.setText("그 수가 아니야. 다시 해봐.  (정답을 보려면 '모르겠음')")
+        theme.set_state(self.lbl_fb, "danger")
 
     def _reveal(self) -> None:
         if self._locked:
@@ -625,8 +624,9 @@ class Stage3Read(_Stage):
         uci = _uci_of(item["fen"], item["san"])
         if uci:
             self.board.show_hint(uci)
+        self.lbl_decode.setText(describe_san(item["san"]))
         self.lbl_fb.setText(
-            f"정답: 초록 화살표   {item['san']} = {describe_san(item['san'])}"
+            f"정답: 초록 화살표   {item['san']}"
         )
         theme.set_state(self.lbl_fb, "danger")
         self._timer.start(2000)
@@ -766,12 +766,11 @@ class Stage4Blind(_Stage):
             return
         self._wrong_streak += 1
         self.board.clear_picks()
-        self.board.show_wrong(_uci(st))
-        if self._wrong_streak == 1:
-            self.lbl_fb.setText("그 칸이 아니야. 다시 해봐. (힌트 버튼 있음)")
-            theme.set_state(self.lbl_fb, "danger")
-            return
-        self._reveal()
+        # 사용자가 고른 칸을 빨갛게 표시한다(정답 칸을 알려주면 안 됨).
+        self.board.show_wrong(chess.Move(frm, to).uci())
+        # 정답은 '정답 칸 보기'를 눌렀을 때만 보여준다.
+        self.lbl_fb.setText("그 칸이 아니야. 다시 해봐. (힌트 버튼 있음)")
+        theme.set_state(self.lbl_fb, "danger")
 
     def _hint(self) -> None:
         st = self._cur()

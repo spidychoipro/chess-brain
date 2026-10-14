@@ -225,33 +225,15 @@ class ReviewPanel(QWidget):
             self._timer.start(self.FEEDBACK_MS)
             return
 
-        # 오답
+        # 오답: 정답은 자동으로 보여주지 않는다. 계속 시도하게 둔다.
+        # 정답을 보려면 '모르겠음'을 눌러야 한다.
         self._wrong_streak += 1
         if self._last_uci:
             self.board.show_wrong(self._last_uci)
-
-        if self._wrong_streak == 1:
-            # 첫 오답: 빨간 표시만 하고 정답은 감춘다. 다시 시도하게 둔다.
-            self.lbl_feedback.setText(
-                "그 수는 아니야. 다시 해봐.  (정답을 보려면 '모르겠음')"
-            )
-            theme.set_state(self.lbl_feedback, "danger")
-            return
-
-        # 두 번째 오답: 이제 정답을 보여주고 같은 문제를 큐 맨 앞에 다시 둔다.
-        self.board.set_interactive(False)
-        self.btn_reveal.setEnabled(False)
-        self._apply(item, sr_mod.GRADE_AGAIN)
-        target_uci = _uci_of(item["fen"], target)
-        if target_uci:
-            self.board.show_hint(target_uci)
         self.lbl_feedback.setText(
-            f"이번엔 정답을 볼게. 초록 화살표가 정답이야. 조금 뒤에 다시 낼게.  ({target})"
+            "그 수는 아니야. 다시 해봐.  (정답을 보려면 '모르겠음')"
         )
         theme.set_state(self.lbl_feedback, "danger")
-        self.queue.pop(0)
-        self.queue.insert(0, item)
-        self._timer.start(self.FEEDBACK_MS)
 
     def _reveal(self) -> None:
         """모르겠음: 정답 화살표만 보여주고 오답 처리한다(바로 큐 재투입)."""
