@@ -42,6 +42,12 @@ class SettingsTab(QWidget):
         self.in_parent = QLineEdit()
         self.in_parent.setPlaceholderText("구글드라이브 부모 폴더 ID 또는 공유 URL")
 
+        self.in_api_key = QLineEdit()
+        self.in_api_key.setPlaceholderText(
+            "API 키 (폴더를 '링크가 있는 모든 사용자'로 공유한 경우 · 로그인 불필요)"
+        )
+        self.in_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+
         self.lbl_folder = theme.label("-", role="muted")
         self.btn_cred = QPushButton("credentials.json 선택")
         self.btn_cred.setProperty("variant", "ghost")
@@ -55,23 +61,35 @@ class SettingsTab(QWidget):
         self.btn_sync = QPushButton("드라이브 동기화")
         self.btn_sync.setProperty("variant", "primary")
         self.btn_sync.clicked.connect(self._sync)
+        self.btn_pull = QPushButton("드라이브 → 로컬로 받기")
+        self.btn_pull.setProperty("variant", "primary")
+        self.btn_pull.clicked.connect(self._pull_drive)
 
         drive_actions = QHBoxLayout()
         drive_actions.addWidget(self.btn_cred)
         drive_actions.addWidget(self.btn_auth)
         drive_actions.addWidget(self.btn_check)
-        drive_actions.addWidget(self.btn_sync)
         drive_actions.addStretch(1)
+        drive_actions2 = QHBoxLayout()
+        drive_actions2.addWidget(self.btn_pull)
+        drive_actions2.addWidget(self.btn_sync)
+        drive_actions2.addStretch(1)
 
         drive_form = QFormLayout()
         drive_form.addRow(theme.label("chess.com 아이디", role="muted"), self.in_username)
         drive_form.addRow(theme.label("부모 폴더", role="muted"), self.in_parent)
+        drive_form.addRow(theme.label("API 키", role="muted"), self.in_api_key)
         drive_form.addRow(theme.label("폴더 상태", role="muted"), self.lbl_folder)
         drive_form.addRow("", drive_actions)
+        drive_form.addRow("", drive_actions2)
 
         self.lbl_drive_help = theme.label(
-            "처음 한 번: Google Cloud Console 에서 OAuth 클라이언트(데스크톱 앱)를 만들어 "
-            "받은 json 을 위 'credentials.json 선택' 으로 고르면 됨. 그다음 '구글 인증'.",
+            "가장 쉬운 길 (API 키): 드라이브에서 부모 폴더 우클릭 → 공유 → "
+            "'링크가 있는 모든 사용자 · 뷰어' 로 바꾸고, Cloud Console 에서 API 키 하나만 "
+            "발급(동의화면 불필요)해 위 'API 키' 칸에 붙여넣기 → '드라이브 → 로컬로 받기'.\n"
+            "비공개로 쓰려면: OAuth 클라이언트(데스크톱 앱) json 을 'credentials.json 선택' "
+            "으로 고르고 '구글 인증' (브라우저 로그인).\n"
+            "받아둔 파일은 '로컬 PGN 폴더'에 저장되며, 이후에는 '로컬 동기화' 만 돌려도 됨.",
             role="muted",
         )
         self.lbl_drive_help.setWordWrap(True)
@@ -213,6 +231,7 @@ class SettingsTab(QWidget):
         c = self.cfg
         self.in_username.setText(cfg_mod.get(c, "chesscom.username", "") or "")
         self.in_parent.setText(cfg_mod.get(c, "google_drive.parent_folder_id", "") or "")
+        self.in_api_key.setText(cfg_mod.get(c, "google_drive.api_key", "") or "")
         name = cfg_mod.get(c, "google_drive.parent_folder_name", "") or ""
         self.lbl_folder.setText(name or "-")
         self.in_stockfish.setText(cfg_mod.get(c, "stockfish.path", "") or "")
@@ -228,6 +247,7 @@ class SettingsTab(QWidget):
         self.cfg = cfg_mod.load_config()
         cfg_mod.set_(self.cfg, "chesscom.username", self.in_username.text().strip())
         cfg_mod.set_(self.cfg, "google_drive.parent_folder_id", self.in_parent.text().strip())
+        cfg_mod.set_(self.cfg, "google_drive.api_key", self.in_api_key.text().strip())
         cfg_mod.set_(self.cfg, "local.pgn_folder", self.in_local.text().strip())
         cfg_mod.set_(self.cfg, "stockfish.path", self.in_stockfish.text().strip())
         cfg_mod.set_(self.cfg, "stockfish.depth", int(self.sp_depth.value()))
@@ -289,7 +309,7 @@ class SettingsTab(QWidget):
         try:
             service = drive.build_service(interactive=False)
             if service is None:
-                self._log("먼저 구글 인증이 필요합니다.")
+                self._log("먼저 'API 키' 를 넣거나 '구글 인증' 을 하세요.")
                 return
             fid = drive.resolve_folder_id(service, self.in_parent.text())
             info = drive.get_folder(service, fid)
@@ -357,10 +377,37 @@ class SettingsTab(QWidget):
         self._worker.finished.connect(lambda: self.btn_sync.setEnabled(True))
         self._worker.start()
 
+    def _pull_drive(self) -> None:
+        from core import pipeline
+
+        self._save()
+        if not self.in_local.text().strip():
+            self._log("먼저 '로컬 PGN 폴더'를 지정하세요. 내려받은 PGN 을 여기에 저장합니다.")
+            return
+        if self._worker is not None and self._worker.isRunning():
+            self._log("이미 작업이 실행 중입니다.")
+            return
+        self._worker = PipelineWorker(pipeline.pull_drive_to_local, cfg=self.cfg)
+        self._worker.message.connect(self._log)
+        self._worker.done.connect(self._on_done)
+        self._worker.failed.connect(self._on_sync_failed)
+        self.btn_pull.setEnabled(False)
+        self._worker.finished.connect(lambda: self.btn_pull.setEnabled(True))
+        self._worker.start()
+
     def _on_sync_failed(self, err: str) -> None:
         # 자격증명이 없어서 실패한 경우엔 다음에 뭘 할지까지 보여준다.
         if "credentials.json" in err:
             self._log(self._CRED_STEPS)
+            return
+        if "드라이브 접근 자격" in err:
+            self._log(
+                "드라이브 접근 방법이 없음. 둘 중 하나:\n"
+                "1) API 키 (쉬움): 부모 폴더를 '링크가 있는 모든 사용자 · 뷰어'로 공유하고, "
+                "Cloud Console > Credentials > Create credentials > API key 로 키를 만들어 "
+                "위 'API 키' 칸에 붙여넣기.\n"
+                "2) 구글 인증: 'credentials.json 선택' 후 '구글 인증'."
+            )
             return
         self._log(f"실패: {err}")
 
