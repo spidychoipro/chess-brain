@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from core import config as cfg_mod
 from core import drive
+from core import rclone as rclone_mod
 from ui import theme
 from ui.worker import PipelineWorker
 
@@ -148,21 +149,55 @@ class SettingsTab(QWidget):
         self.btn_rclone_bin = QPushButton("찾아보기")
         self.btn_rclone_bin.setProperty("variant", "ghost")
         self.btn_rclone_bin.clicked.connect(self._browse_rclone)
+        self.in_rclone_conf = QLineEdit()
+        self.in_rclone_conf.setPlaceholderText("rclone.conf 경로 (비우면 기본 위치)")
+        self.btn_rclone_conf = QPushButton("찾아보기")
+        self.btn_rclone_conf.setProperty("variant", "ghost")
+        self.btn_rclone_conf.clicked.connect(self._browse_rclone_conf)
         self.btn_rclone = QPushButton("rclone 으로 받기")
         self.btn_rclone.setProperty("variant", "primary")
         self.btn_rclone.clicked.connect(self._pull_rclone)
 
+        # mount: 드라이브를 로컬 드라이브 문자로 붙인다(복사 없이 실시간)
+        self.in_mount_point = QLineEdit()
+        self.in_mount_point.setPlaceholderText("붙일 드라이브 문자 (예: X:)")
+        self.btn_mount = QPushButton("드라이브 마운트")
+        self.btn_mount.setProperty("variant", "primary")
+        self.btn_mount.clicked.connect(self._mount_drive)
+        self.btn_unmount = QPushButton("마운트 해제")
+        self.btn_unmount.setProperty("variant", "ghost")
+        self.btn_unmount.clicked.connect(self._unmount_drive)
+        self.btn_use_mount = QPushButton("마운트 폴더를 로컬 PGN 폴더로")
+        self.btn_use_mount.setProperty("variant", "ghost")
+        self.btn_use_mount.clicked.connect(self._use_mount_as_local)
+        self.lbl_mount = theme.label("-", role="muted")
+
         rclone_bin_row = QHBoxLayout()
         rclone_bin_row.addWidget(self.in_rclone_bin, 1)
         rclone_bin_row.addWidget(self.btn_rclone_bin)
+        rclone_conf_row = QHBoxLayout()
+        rclone_conf_row.addWidget(self.in_rclone_conf, 1)
+        rclone_conf_row.addWidget(self.btn_rclone_conf)
+        mount_actions = QHBoxLayout()
+        mount_actions.addWidget(self.btn_mount)
+        mount_actions.addWidget(self.btn_unmount)
+        mount_actions.addWidget(self.btn_use_mount)
+        mount_actions.addStretch(1)
         rclone_form = QFormLayout()
         rclone_form.addRow(theme.label("rclone 원격", role="muted"), self.in_rclone_remote)
         rclone_form.addRow(theme.label("rclone.exe", role="muted"), rclone_bin_row)
+        rclone_form.addRow(theme.label("rclone.conf", role="muted"), rclone_conf_row)
+        rclone_form.addRow(theme.label("드라이브 문자", role="muted"), self.in_mount_point)
+        rclone_form.addRow(theme.label("마운트 상태", role="muted"), self.lbl_mount)
         rclone_form.addRow("", self.btn_rclone)
+        rclone_form.addRow("", mount_actions)
         self.lbl_rclone = theme.label(
             "rclone 을 쓰면 앱에 구글 API 키/OAuth 가 전혀 필요 없다(rclone 이 인증을 들고 있음). "
-            "rclone 원격 경로만 넣고 누르면 위 '로컬 PGN 폴더'로 받아온 뒤 바로 동기화한다. "
-            "rclone 은 설치 없이 exe 하나만 있으면 됨.",
+            "rclone.conf 를 기본 위치가 아닌 곳에 뒀으면 그 경로도 넣는다(예: "
+            "C:\\Users\\<나>\\.config\\chesspgn-auto\\rclone.conf).\n"
+            "① 'rclone 으로 받기': .pgn 을 '로컬 PGN 폴더'로 복사한 뒤 바로 동기화(인터넷 없이도 이후 읽힘).\n"
+            "② '드라이브 마운트': 드라이브를 로컬 드라이브 문자(예: X:)로 붙인다. 복사가 필요 없어 늘 최신이지만 "
+            "Windows 는 WinFsp 가 있어야 하고, 붙인 드라이브 문자를 '로컬 PGN 폴더'로 쓰면 된다.",
             role="muted",
         )
         self.lbl_rclone.setWordWrap(True)
@@ -178,12 +213,16 @@ class SettingsTab(QWidget):
         # -- stockfish -------------------------------------------------------
         self.in_stockfish = QLineEdit()
         self.in_stockfish.setPlaceholderText("stockfish.exe 경로 (선택)")
+        self.btn_detect_sf = QPushButton("자동 감지")
+        self.btn_detect_sf.setProperty("variant", "ghost")
+        self.btn_detect_sf.clicked.connect(self._detect_stockfish)
         self.btn_browse_sf = QPushButton("찾아보기")
         self.btn_browse_sf.setProperty("variant", "ghost")
         self.btn_browse_sf.clicked.connect(self._browse_stockfish)
 
         sf_row = QHBoxLayout()
         sf_row.addWidget(self.in_stockfish, 1)
+        sf_row.addWidget(self.btn_detect_sf)
         sf_row.addWidget(self.btn_browse_sf)
 
         self.sp_depth = QSpinBox()
@@ -198,11 +237,20 @@ class SettingsTab(QWidget):
         sf_form.addRow(theme.label("분석 depth", role="muted"), self.sp_depth)
         sf_form.addRow(theme.label("실수 임계값(loss)", role="muted"), self.sp_threshold)
 
+        self.lbl_sf = theme.label(
+            "Stockfish 는 '내 실수' 분석에만 쓰인다(없어도 기보 트레이닝은 됨). "
+            "'자동 감지' 를 누르면 PATH·앱 옆·흔한 설치 위치에서 stockfish*.exe 를 찾아 채워준다. "
+            "없으면 stockfishchess.org 에서 받아 아무 폴더에 풀고 '찾아보기' 로 지정하면 된다.",
+            role="muted",
+        )
+        self.lbl_sf.setWordWrap(True)
+
         card_sf = theme.card()
         cs = QVBoxLayout(card_sf)
         cs.setContentsMargins(18, 16, 18, 16)
         cs.setSpacing(10)
         cs.addWidget(theme.label("Stockfish (옵션)", role="h2"))
+        cs.addWidget(self.lbl_sf)
         cs.addLayout(sf_form)
 
         # -- defaults --------------------------------------------------------
@@ -263,6 +311,10 @@ class SettingsTab(QWidget):
 
     # -- config <-> widgets -------------------------------------------------
 
+    def refresh(self) -> None:
+        """탭에 들어올 때마다 마운트 상태를 실제와 맞춘다."""
+        self._refresh_mount_status()
+
     def _load_into_widgets(self) -> None:
         c = self.cfg
         self.in_username.setText(cfg_mod.get(c, "chesscom.username", "") or "")
@@ -274,12 +326,18 @@ class SettingsTab(QWidget):
         self.in_local.setText(cfg_mod.get(c, "local.pgn_folder", "") or "")
         self.in_rclone_remote.setText(cfg_mod.get(c, "rclone.remote", "") or "")
         self.in_rclone_bin.setText(cfg_mod.get(c, "rclone.binary", "") or "")
+        self.in_rclone_conf.setText(cfg_mod.get(c, "rclone.config", "") or "")
+        self.in_mount_point.setText(cfg_mod.get(c, "rclone.mount_point", "") or "")
         self.sp_depth.setValue(int(cfg_mod.get(c, "stockfish.depth", 12) or 12))
         self.sp_threshold.setValue(float(cfg_mod.get(c, "mistakes.loss_threshold", 0.80) or 0.80))
         idx = self.cb_source.findData(cfg_mod.get(c, "training.default_source", "bot"))
         self.cb_source.setCurrentIndex(idx if idx >= 0 else 0)
         idx = self.cb_mode.findData(cfg_mod.get(c, "training.default_mode", "recall"))
         self.cb_mode.setCurrentIndex(idx if idx >= 0 else 0)
+        self._refresh_mount_status()
+        # 경로가 비어 있으면 흔한 자리만 훑어 자동으로 채워둔다(빠른 탐색).
+        if not self.in_stockfish.text().strip():
+            self._detect_stockfish(quick=True)
 
     def _collect(self) -> None:
         self.cfg = cfg_mod.load_config()
@@ -289,6 +347,8 @@ class SettingsTab(QWidget):
         cfg_mod.set_(self.cfg, "local.pgn_folder", self.in_local.text().strip())
         cfg_mod.set_(self.cfg, "rclone.remote", self.in_rclone_remote.text().strip())
         cfg_mod.set_(self.cfg, "rclone.binary", self.in_rclone_bin.text().strip())
+        cfg_mod.set_(self.cfg, "rclone.config", self.in_rclone_conf.text().strip())
+        cfg_mod.set_(self.cfg, "rclone.mount_point", self.in_mount_point.text().strip())
         cfg_mod.set_(self.cfg, "stockfish.path", self.in_stockfish.text().strip())
         cfg_mod.set_(self.cfg, "stockfish.depth", int(self.sp_depth.value()))
         cfg_mod.set_(self.cfg, "mistakes.loss_threshold", float(self.sp_threshold.value()))
@@ -370,6 +430,115 @@ class SettingsTab(QWidget):
         if path:
             self.in_stockfish.setText(path)
 
+    def _detect_stockfish(self, quick: bool = False) -> None:
+        """PATH·앱 옆·흔한 설치 위치에서 stockfish*.exe 를 찾는다.
+
+        ``quick=True`` 는 흔한 자리만 본다(탭 열 때 조용히). 버튼은 전체 탐색인데
+        몇 초 걸릴 수 있어 워커 스레드에서 돌린다.
+        """
+        from core import engine as engine_mod
+
+        if quick:
+            try:
+                path = engine_mod.find_stockfish(fast=True)
+            except Exception as exc:  # noqa: BLE001
+                self._log(f"Stockfish 자동 감지 실패: {exc}")
+                return
+            self._apply_stockfish(path, quiet=True)
+            return
+
+        if self._worker is not None and self._worker.isRunning():
+            self._log("이미 작업이 실행 중입니다.")
+            return
+        self._log("Stockfish 찾는 중...")
+        self._worker = PipelineWorker(self._run_detect)
+        self._worker.done.connect(self._on_detect_done)
+        self._worker.failed.connect(lambda e: self._log(f"자동 감지 실패: {e}"))
+        self.btn_detect_sf.setEnabled(False)
+        self._worker.finished.connect(lambda: self.btn_detect_sf.setEnabled(True))
+        self._worker.start()
+
+    def _run_detect(self, on_progress=None) -> dict:
+        from core import engine as engine_mod
+
+        return {"path": engine_mod.find_stockfish()}
+
+    def _on_detect_done(self, result: dict) -> None:
+        self._apply_stockfish(result.get("path"))
+
+    def _apply_stockfish(self, path, quiet: bool = False) -> None:
+        if not path:
+            if not quiet:
+                self._log(
+                    "Stockfish 를 못 찾음. stockfishchess.org 에서 받아 아무 폴더에 풀고 "
+                    "'찾아보기' 로 지정하면 된다."
+                )
+            return
+        self.in_stockfish.setText(path)
+        if not quiet:
+            self._save()
+            self._log(f"Stockfish 자동 감지: {path}")
+
+    def _refresh_mount_status(self) -> None:
+        try:
+            running = rclone_mod.mount_running()
+        except Exception:  # noqa: BLE001
+            running = False
+        point = self.in_mount_point.text().strip()
+        self.lbl_mount.setText(f"붙어 있음: {point}" if running else ("-" if not point else "안 붙음"))
+        self.btn_unmount.setEnabled(running)
+
+    def _mount_drive(self) -> None:
+        from core import pipeline
+
+        self._save()
+        if not self.in_rclone_remote.text().strip():
+            self._log("rclone 원격 경로를 입력하세요. (예: gdrive:chess분석)")
+            return
+        if not self.in_mount_point.text().strip():
+            self._log("붙일 드라이브 문자를 입력하세요. (예: X:)")
+            return
+        if self._worker is not None and self._worker.isRunning():
+            self._log("이미 작업이 실행 중입니다.")
+            return
+        self._worker = PipelineWorker(pipeline.mount_drive, cfg=self.cfg)
+        self._worker.message.connect(self._log)
+        self._worker.done.connect(self._on_mount_done)
+        self._worker.failed.connect(self._on_sync_failed)
+        self.btn_mount.setEnabled(False)
+        self._worker.finished.connect(lambda: self.btn_mount.setEnabled(True))
+        self._worker.start()
+
+    def _unmount_drive(self) -> None:
+        from core import pipeline
+
+        if self._worker is not None and self._worker.isRunning():
+            self._log("이미 작업이 실행 중입니다.")
+            return
+        self._worker = PipelineWorker(pipeline.unmount_drive, cfg=self.cfg)
+        self._worker.message.connect(self._log)
+        self._worker.done.connect(lambda _r: self._on_mount_done({}))
+        self._worker.failed.connect(lambda e: self._log(f"실패: {e}"))
+        self._worker.start()
+
+    def _on_mount_done(self, result: dict) -> None:
+        self._refresh_mount_status()
+        point = result.get("mount_point")
+        if point:
+            self._log(f"드라이브 마운트 완료: {point}")
+            # 붙였으면 바로 로컬 PGN 폴더로 써먹을 수 있게 안내 겸 자동 지정 제안
+            if not self.in_local.text().strip():
+                self._use_mount_as_local()
+
+    def _use_mount_as_local(self) -> None:
+        point = self.in_mount_point.text().strip()
+        if not point:
+            self._log("드라이브 문자를 먼저 입력하세요. (예: X:)")
+            return
+        self.in_local.setText(rclone_mod.normalize_mount_point(point))
+        self._save()
+        self._log(f"로컬 PGN 폴더를 마운트 위치로 지정: {self.in_local.text()}")
+
     def _browse_local(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "PGN 게임 폴더 선택")
         if path:
@@ -441,6 +610,13 @@ class SettingsTab(QWidget):
         )
         if path:
             self.in_rclone_bin.setText(path)
+
+    def _browse_rclone_conf(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "rclone.conf 선택", "", "rclone 설정 (*.conf);;모든 파일 (*)"
+        )
+        if path:
+            self.in_rclone_conf.setText(path)
 
     def _pull_rclone(self) -> None:
         from core import pipeline

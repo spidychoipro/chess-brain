@@ -31,7 +31,9 @@ DEFAULTS: Dict[str, Any] = {
         # rclone 으로 드라이브 폴더를 로컬로 가져올 때 쓴다.
         # rclone 이 자체적으로 구글 인증을 갖고 있어서 앱은 API 키/OAuth 가 필요 없다.
         "binary": "",            # rclone.exe 경로 (비우면 PATH/흔한 위치 자동 탐색)
-        "remote": "",            # 예: "gdrive:chess-brian"
+        "config": "",            # rclone.conf 경로 (비우면 rclone 기본 위치)
+        "remote": "",            # 예: "gdrive:chess분석"
+        "mount_point": "",       # mount 할 드라이브 문자 (예: "X:")
     },
     "stockfish": {
         "path": "",

@@ -8,6 +8,7 @@ venv/
 # 앱 데이터 / 비밀 (로컬에만)
 data/*.db
 data/*.sqlite3
+data/*.log
 config/config.json
 config/token.json
 config/credentials.json
