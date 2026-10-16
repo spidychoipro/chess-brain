@@ -24,12 +24,13 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
-    QGridLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -275,33 +276,37 @@ class Stage1Pieces(_Stage):
     def __init__(self, parent=None):
         super().__init__(parent)
         legend = theme.card(flat=True)
-        grid = QGridLayout(legend)
-        grid.setContentsMargins(14, 12, 14, 12)
-        grid.setSpacing(8)
-        grid.addWidget(theme.label("기물과 글자", role="h2"), 0, 0, 1, 3)
+        gl = QVBoxLayout(legend)
+        gl.setContentsMargins(14, 10, 14, 10)
+        gl.setSpacing(6)
+        gl.addWidget(theme.label("기물과 글자", role="h2"))
+        # 세로로 길면 창이 화면 밖으로 나가므로 가로 한 줄로 압축한다.
+        strip = QHBoxLayout()
+        strip.setSpacing(16)
         rows = [
-            (chess.KING, "K", "킹 (King)"),
-            (chess.QUEEN, "Q", "퀸 (Queen)"),
-            (chess.ROOK, "R", "룩 (Rook)"),
-            (chess.BISHOP, "B", "비숍 (Bishop)"),
-            (chess.KNIGHT, "N", "나이트 (kNight)"),
+            (chess.KING, "K", "킹"),
+            (chess.QUEEN, "Q", "퀸"),
+            (chess.ROOK, "R", "룩"),
+            (chess.BISHOP, "B", "비숍"),
+            (chess.KNIGHT, "N", "나이트"),
+            (chess.PAWN, "(없음)", "폰"),
         ]
-        for i, (pt, letter, name) in enumerate(rows, start=1):
-            grid.addWidget(glyph_label(pt, 40), i, 0)
-            grid.addWidget(theme.label(letter, role="h2"), i, 1)
-            grid.addWidget(theme.label(name, role="muted"), i, 2)
-        grid.addWidget(glyph_label(chess.PAWN, 40), 6, 0)
-        grid.addWidget(theme.label("(없음)", role="h2"), 6, 1)
-        grid.addWidget(
-            theme.label("폰 (Pawn) — 글자가 없다. 목적지 칸만 쓴다. 예: e4", role="muted"),
-            6, 2,
-        )
+        for pt, letter, name in rows:
+            cell = QVBoxLayout()
+            cell.setSpacing(0)
+            cell.addWidget(glyph_label(pt, 36), 0, Qt.AlignHCenter)
+            cell.addWidget(theme.label(letter, role="h2"), 0, Qt.AlignHCenter)
+            cell.addWidget(theme.label(name, role="muted"), 0, Qt.AlignHCenter)
+            strip.addLayout(cell)
+        strip.addStretch(1)
+        gl.addLayout(strip)
         note = theme.label(
-            "나이트는 영어로 Knight 라서 K 가 아니라 N 을 쓴다. K 는 킹이라 헷갈리기 쉬움.",
+            "나이트는 Knight 라서 K 가 아니라 N. K 는 킹. "
+            "폰은 글자 없이 목적지 칸만 쓴다(예: e4).",
             role="small",
         )
         note.setWordWrap(True)
-        grid.addWidget(note, 7, 0, 1, 3)
+        gl.addWidget(note)
 
         self.mastery = MasteryBar(self.prog)
         self.lbl_q = theme.label("", role="h1")
@@ -1005,7 +1010,9 @@ class NotationDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("노테이션 배우기")
-        self.resize(1040, 780)
+        # 레이아웃 최소 크기가 화면보다 클 수 있어서, 창이 줄어들 수 있게 바닥을 낮춘다.
+        # (넘치는 단계 내용은 아래 스크롤 영역이 처리)
+        self.setMinimumSize(620, 420)
 
         self.stack = QStackedWidget()
         self.pages: List[_Stage] = []
@@ -1042,10 +1049,33 @@ class NotationDialog(QDialog):
         root.addWidget(theme.label("노테이션 배우기", role="h1"))
         root.addWidget(intro)
         root.addLayout(nav)
-        root.addWidget(self.stack, 1)
+        # 단계 내용이 세로로 길어 창이 화면 밖으로 나갈 수 있으므로 스크롤로 감싼다.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.viewport().setAutoFillBackground(False)
+        scroll.setWidget(self.stack)
+        root.addWidget(scroll, 1)
 
+        self.resize(1040, 820)
         self._refresh_buttons()
         self.goto(self._first_unpassed(), force=True)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # 화면 작업영역에 맞춰 크기를 줄이고 화면 안으로 위치시킨다.
+        scr = self.screen()
+        if scr is None:
+            return
+        area = scr.availableGeometry()
+        self.resize(
+            min(self.width(), area.width() - 40),
+            min(self.height(), area.height() - 60),
+        )
+        pos = area.center() - self.rect().center()
+        pos.setX(max(area.left(), min(pos.x(), area.right() - self.width())))
+        pos.setY(max(area.top(), min(pos.y(), area.bottom() - self.height())))
+        self.move(pos)
 
     def _passed(self, idx: int) -> bool:
         page = self.pages[idx]
