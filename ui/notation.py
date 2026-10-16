@@ -437,11 +437,21 @@ class Stage1Pieces(_Stage):
 
     # -- 화면 --------------------------------------------------------------
     def _clear(self, layout) -> None:
+        # deleteLater() 만 부르면 위젯이 바로 숨겨지지 않는다. 게다가 레이아웃이
+        # 한 번도 돌지 않은 위젯은 기본 크기(640x480) 그대로 남아서, 그 안에 든
+        # 글자가 화면 가운데에 찍힌다. (1단계에서 큰 글자 옆에 나이트가 떠 보이던 원인)
+        # 그래서 숨기고 부모에서 떼어낸 뒤 지운다.
         while layout.count():
             item = layout.takeAt(0)
             w = item.widget()
             if w is not None:
+                w.hide()
+                w.setParent(None)
                 w.deleteLater()
+            else:
+                sub = item.layout()
+                if sub is not None:
+                    self._clear(sub)
 
     def _setup_board(self) -> None:
         """빈 보드에 목표 기물 하나만 두고, 갈 수 있는 칸을 점으로 보여준다."""
@@ -609,11 +619,21 @@ class Stage2Squares(_Stage):
         self._new_question()
 
     def _clear(self, layout) -> None:
+        # deleteLater() 만 부르면 위젯이 바로 숨겨지지 않는다. 게다가 레이아웃이
+        # 한 번도 돌지 않은 위젯은 기본 크기(640x480) 그대로 남아서, 그 안에 든
+        # 글자가 화면 가운데에 찍힌다. (1단계에서 큰 글자 옆에 나이트가 떠 보이던 원인)
+        # 그래서 숨기고 부모에서 떼어낸 뒤 지운다.
         while layout.count():
             item = layout.takeAt(0)
             w = item.widget()
             if w is not None:
+                w.hide()
+                w.setParent(None)
                 w.deleteLater()
+            else:
+                sub = item.layout()
+                if sub is not None:
+                    self._clear(sub)
 
     def _name(self, sq: int) -> str:
         return chess.square_name(sq)
