@@ -21,7 +21,6 @@ from typing import Any, Dict, List, Optional
 
 import chess
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -93,12 +92,23 @@ _PIECE_TIP = {
 
 def glyph_label(piece_type: int, size: int = 56) -> QLabel:
     lbl = QLabel(_GLYPH[piece_type])
-    f = QFont("Segoe UI Symbol")
-    f.setPixelSize(size)
-    lbl.setFont(f)
     lbl.setAlignment(Qt.AlignCenter)
-    lbl.setStyleSheet("color: #f2f4f8;")
-    lbl.setMinimumWidth(size + 14)
+    # 주의: 테마의 `QWidget { font-size: 13px }` 가 위젯 setFont() 를 덮어쓴다.
+    # (show 될 때 polish 되면서 13px 로 리셋됨) 그래서 QSS 로 지정해야 먹는다.
+    lbl.setStyleSheet(
+        f'color: #f2f4f8; font-family: "Segoe UI Symbol"; font-size: {size}px;'
+    )
+    lbl.setMinimumWidth(size + 20)
+    lbl.setMinimumHeight(size + 20)
+    return lbl
+
+
+def big_text_label(text: str, size: int = 72) -> QLabel:
+    """글자 하나를 크게 보여주는 라벨(letter→기물 문제용)."""
+    lbl = QLabel(text)
+    lbl.setAlignment(Qt.AlignCenter)
+    lbl.setStyleSheet(f"color: #f2f4f8; font-weight: 700; font-size: {size}px;")
+    lbl.setMinimumHeight(size + 20)
     return lbl
 
 
@@ -314,7 +324,7 @@ class Stage1Pieces(_Stage):
         qlay.setSpacing(14)
         qlay.addWidget(self.mastery)
         qlay.addWidget(self.lbl_q)
-        qlay.addLayout(self.piece_box)
+        qlay.addLayout(self.piece_box, 1)
         qlay.addLayout(self.answers)
         qlay.addWidget(self.lbl_fb)
         qlay.addWidget(self.btn_next, 0, Qt.AlignCenter)
@@ -377,20 +387,21 @@ class Stage1Pieces(_Stage):
         pool = [chess.KING, chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT]
         if self._kind == "glyph2letter":
             self.lbl_q.setText("이 기물의 글자는?")
-            self.piece_box.addWidget(glyph_label(self._piece, 92))
+            self.piece_box.addWidget(glyph_label(self._piece, 96))
             for opt in list(_ANSWER_LETTERS) + ["폰(없음)"]:
                 btn = QPushButton(opt)
+                btn.setMinimumWidth(64)
                 btn.clicked.connect(lambda _=False, o=opt: self._answer_letter(o))
                 self.answers.addWidget(btn)
         else:
             letter = "(없음)" if self._piece == chess.PAWN else _LETTER[self._piece]
-            self.lbl_q.setText(f"'{letter}' 는 어느 기물?")
+            self.lbl_q.setText("이 글자는 어느 기물?")
+            self.piece_box.addWidget(big_text_label(letter, 96))
             for pt in pool + [chess.PAWN]:
                 btn = QPushButton(_GLYPH[pt])
-                f = QFont("Segoe UI Symbol")
-                f.setPixelSize(30)
-                btn.setFont(f)
-                btn.setMinimumWidth(64)
+                # 위와 같은 이유로 폰트는 QSS 로 지정한다.
+                btn.setStyleSheet('font-family: "Segoe UI Symbol"; font-size: 34px;')
+                btn.setMinimumWidth(72)
                 btn.clicked.connect(lambda _=False, p=pt: self._answer_piece(p))
                 self.answers.addWidget(btn)
 
