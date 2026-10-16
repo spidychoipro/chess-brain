@@ -27,6 +27,50 @@ def _user_settings(cfg: Dict[str, Any]):
     return username, fallback
 
 
+def _fill_missing_replies_with(sf, on_progress: Progress = None, limit: int = 500) -> int:
+    """옛 실수의 '상대 응수'를 채운다(재분석 없이 엔진만 다시 돌림).
+
+    국면이 이미 끝난 경우는 응수가 없으니 '-' 로 표시해 두 번 일하지 않게 한다.
+    """
+    rows = db.mistakes_missing_reply(limit=limit)
+    if not rows:
+        return 0
+    _note(on_progress, f"상대 응수 채우는 중: {len(rows)}개")
+    filled = 0
+    for r in rows:
+        try:
+            b = chess.Board(r["fen"])
+            b.push(b.parse_san(r["my_san"]))
+        except Exception:  # noqa: BLE001
+            db.set_mistake_reply(r["id"], "-")
+            continue
+        if b.is_game_over():
+            db.set_mistake_reply(r["id"], "-")
+            continue
+        try:
+            rep = sf.best_move(b).get("best_san") or "-"
+        except Exception:  # noqa: BLE001
+            rep = "-"
+        db.set_mistake_reply(r["id"], rep)
+        filled += 1
+    _note(on_progress, f"상대 응수 {filled}개 채움")
+    return filled
+
+
+def fill_missing_replies(cfg: Dict[str, Any], on_progress: Progress = None) -> int:
+    """새로 분석할 게임이 없어도 '실수 분석' 버튼이 응수를 채우게 한다."""
+    sf_path = cfg_mod.get(cfg, "stockfish.path", "")
+    if not engine_mod.engine_available(sf_path):
+        return 0
+    depth = max(4, min(16, int(cfg_mod.get(cfg, "stockfish.depth", 12) or 12)))
+    threads = int(cfg_mod.get(cfg, "stockfish.threads", 0) or 0)
+    hash_mb = int(cfg_mod.get(cfg, "stockfish.hash_mb", 256) or 256)
+    with engine_mod.Stockfish(
+        sf_path, depth, threads=threads or None, hash_mb=hash_mb
+    ) as sf:
+        return _fill_missing_replies_with(sf, on_progress)
+
+
 def ingest_pgn_text(
     pgn_text: str,
     source: str,
@@ -364,8 +408,11 @@ def analyze_mistakes(
         folder_ok = bool(root) and os.path.isdir(root)
         # 게임이 아예 없어서 0인지, 다 분석해서 0인지 나눠서 알려준다.
         reason = "no_games" if counts["total"] == 0 else "all_analyzed"
+        filled = 0
         if reason == "all_analyzed":
             _note(on_progress, "새로 분석할 게임이 없습니다. (이미 다 분석됨)")
+            # 게임은 다 분석돼도 옛 실수의 상대 응수는 아직 비어 있을 수 있다.
+            filled = fill_missing_replies(cfg, on_progress)
         elif not folder_ok:
             _note(on_progress, f"분석할 게임이 없고 로컬 PGN 폴더도 못 찾음: {root or '(비어 있음)'}")
         else:
@@ -374,6 +421,7 @@ def analyze_mistakes(
             "games": 0,
             "mistakes": 0,
             "problems": 0,
+            "filled": filled,
             "games_total": counts["total"],
             "pending_before": 0,
             "reason": reason,
@@ -386,7 +434,7 @@ def analyze_mistakes(
     for g in pending:
         by_file.setdefault(g["file_id"], []).append(g)
 
-    stats = {"games": 0, "mistakes": 0, "problems": 0}
+    stats = {"games": 0, "mistakes": 0, "problems": 0, "filled": 0}
     service = None
     if any(not fid.startswith("local:") for fid in by_file):
         service = drive.build_service()
@@ -439,6 +487,7 @@ def analyze_mistakes(
                         source_game_id=gid,
                         source=gsource,
                         ply=ln.ply,
+                        reply_san=res.reply_san,
                     )
                     stats["mistakes"] += 0 if mid == 0 else 1
                     if mid and res.best_san:
@@ -455,6 +504,7 @@ def analyze_mistakes(
                         if pid:
                             stats["problems"] += 1
                 db.mark_game_analyzed(gid)
+        stats["filled"] = _fill_missing_replies_with(sf, on_progress)
     _note(on_progress, f"완료: 실수 {stats['mistakes']} / 복습문제 {stats['problems']}")
     return {
         **stats,
