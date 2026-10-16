@@ -81,15 +81,6 @@ _LETTER_PIECE = {
 }
 _ANSWER_LETTERS = ["K", "Q", "R", "B", "N"]
 
-_PIECE_TIP = {
-    chess.KING: "K = 킹(King). 가장 중요한 기물.",
-    chess.QUEEN: "Q = 퀸(Queen).",
-    chess.ROOK: "R = 룩(Rook).",
-    chess.BISHOP: "B = 비숍(Bishop).",
-    chess.KNIGHT: "N = 나이트(kNight). K(킹)와 헷갈리니 조심.",
-    chess.PAWN: "폰은 글자가 없다. 목적지 칸만 쓴다. 예: e4",
-}
-
 
 def glyph_label(piece_type: int, size: int = 56) -> QLabel:
     lbl = QLabel(_GLYPH[piece_type])
@@ -265,22 +256,121 @@ class _Stage(QWidget):
 
 
 # ---------------------------------------------------------------------------
-# 1단계: 기물 ↔ 글자
+# 1단계: 기물 ↔ 글자 (+ 움직임)
 # ---------------------------------------------------------------------------
 
+# 글자 이유(암기 포인트)와 움직임 설명. 틀렸을 때 반복해서 각인시킨다.
+_LETTER_REASON = {
+    chess.KING: "King 이라 K. 나이트(Knight)랑 헷갈리지 마.",
+    chess.QUEEN: "Queen 이라 Q.",
+    chess.ROOK: "Rook 이라 R.",
+    chess.BISHOP: "Bishop 이라 B.",
+    chess.KNIGHT: "Knight 라서 K 가 아니라 N. K 는 킹이야.",
+    chess.PAWN: "폰은 글자가 없어. 목적지 칸만 쓴다(예: e4).",
+}
+_MOVE_KR = {
+    chess.KING: "킹은 어느 방향으로든 한 칸씩 움직인다.",
+    chess.QUEEN: "퀸은 가로·세로·대각선 어디로든 움직인다.",
+    chess.ROOK: "룩은 가로·세로 직선으로 움직인다.",
+    chess.BISHOP: "비숍은 대각선으로만 움직인다.",
+    chess.KNIGHT: "나이트는 L자(두 칸 + 한 칸)로 점프한다.",
+    chess.PAWN: "폰은 앞으로 한 칸(첫 수는 두 칸), 잡을 땐 대각선.",
+}
+
+
 class Stage1Pieces(_Stage):
+    """기물 글자를 '보드 움직임'과 같이 익힌다.
+
+    이전엔 글자만 크게 띄우고 기물을 고르는 플래시카드였다. 이제는 항상 보드를
+    같이 보여주고, 그 기물이 갈 수 있는 칸을 점으로 그려서 '글자 ↔ 움직임'이
+    같이 붙게 한다. 난이도는 레벨로 올라간다(먼저 K Q R B N, 나중에 폰).
+    """
+
     key = "stage1"
     goal = 15
     accuracy = 0.8
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        legend = theme.card(flat=True)
-        gl = QVBoxLayout(legend)
-        gl.setContentsMargins(14, 10, 14, 10)
-        gl.setSpacing(6)
-        gl.addWidget(theme.label("기물과 글자", role="h2"))
-        # 세로로 길면 창이 화면 밖으로 나가므로 가로 한 줄로 압축한다.
+
+        self.board = ChessBoard()
+        self.board.set_interactive(False)
+        self.board.set_pick_mode(False)
+
+        side = QVBoxLayout()
+        side.setSpacing(10)
+        self.mastery = MasteryBar(self.prog)
+        self.lbl_level = theme.label("", role="caption")
+        self.lbl_q = theme.label("", role="h1")
+        self.lbl_q.setWordWrap(True)
+        self.prompt = QVBoxLayout()
+        self.prompt.setAlignment(Qt.AlignCenter)
+        self.lbl_pick = theme.label("고르세요:", role="muted")
+        self.answers = QHBoxLayout()
+        self.answers.setAlignment(Qt.AlignCenter)
+        self.lbl_fb = theme.label("", role="small")
+        self.lbl_fb.setWordWrap(True)
+        self.btn_next = QPushButton("다음 ▶")
+        self.btn_next.setProperty("variant", "ghost")
+        self.btn_next.clicked.connect(self._new_question)
+        self.btn_next.setEnabled(False)
+
+        side.addWidget(self.mastery)
+        side.addWidget(self.lbl_level)
+        side.addWidget(self.lbl_q)
+        side.addLayout(self.prompt, 1)
+        side.addWidget(self.lbl_pick)
+        side.addLayout(self.answers)
+        side.addWidget(self.lbl_fb)
+        side.addWidget(self.btn_next, 0, Qt.AlignLeft)
+
+        self.lbl_board = theme.label("", role="caption")
+        self.lbl_board.setWordWrap(True)
+        board_col = QVBoxLayout()
+        board_col.setSpacing(6)
+        board_col.addWidget(self.board, 1)
+        board_col.addWidget(self.lbl_board)
+
+        left = QWidget()
+        left.setLayout(board_col)
+        body = QHBoxLayout()
+        body.setSpacing(18)
+        body.addWidget(left, 3)
+        right = QWidget()
+        right.setLayout(side)
+        body.addWidget(right, 2)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(4, 4, 4, 4)
+        root.setSpacing(10)
+        root.addWidget(self._goal_card())
+        root.addLayout(body, 1)
+
+        self._piece: Optional[int] = None
+        self._kind = "letter2glyph"
+        self._answered = False
+        self._last_id = ""
+        self._queue: List[str] = []
+        self._advance_timer = QTimer(self)
+        self._advance_timer.setSingleShot(True)
+        self._advance_timer.timeout.connect(self._new_question)
+        self._new_question()
+
+    # -- 목표 + 범례 -------------------------------------------------------
+    def _goal_card(self) -> QWidget:
+        card = theme.card(flat=True)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(14, 10, 14, 10)
+        lay.setSpacing(6)
+        lay.addWidget(theme.label("이 단계 목표", role="h2"))
+        goal = theme.label(
+            "기보 글자만 보고 '어떤 기물이 어디로 가는지'가 바로 떠오르게 만들기. "
+            "여기서 기물 글자를 끝내면, 다음 단계부터 기보를 읽을 수 있게 된다.",
+            role="muted",
+        )
+        goal.setWordWrap(True)
+        lay.addWidget(goal)
+
         strip = QHBoxLayout()
         strip.setSpacing(16)
         rows = [
@@ -294,81 +384,49 @@ class Stage1Pieces(_Stage):
         for pt, letter, name in rows:
             cell = QVBoxLayout()
             cell.setSpacing(0)
-            cell.addWidget(glyph_label(pt, 36), 0, Qt.AlignHCenter)
+            cell.addWidget(glyph_label(pt, 30), 0, Qt.AlignHCenter)
             cell.addWidget(theme.label(letter, role="h2"), 0, Qt.AlignHCenter)
             cell.addWidget(theme.label(name, role="muted"), 0, Qt.AlignHCenter)
             strip.addLayout(cell)
         strip.addStretch(1)
-        gl.addLayout(strip)
-        note = theme.label(
-            "나이트는 Knight 라서 K 가 아니라 N. K 는 킹. "
-            "폰은 글자 없이 목적지 칸만 쓴다(예: e4).",
-            role="small",
-        )
-        note.setWordWrap(True)
-        gl.addWidget(note)
+        lay.addLayout(strip)
+        return card
 
-        self.mastery = MasteryBar(self.prog)
-        self.lbl_q = theme.label("", role="h1")
-        self.lbl_q.setAlignment(Qt.AlignCenter)
-        self.piece_box = QVBoxLayout()
-        self.piece_box.setAlignment(Qt.AlignCenter)
-        self.answers = QHBoxLayout()
-        self.answers.setAlignment(Qt.AlignCenter)
-        self.lbl_fb = theme.label("", role="small")
-        self.lbl_fb.setAlignment(Qt.AlignCenter)
-        self.lbl_fb.setWordWrap(True)
-        self.btn_next = QPushButton("다음 ▶")
-        self.btn_next.setProperty("variant", "ghost")
-        self.btn_next.clicked.connect(self._new_question)
-        self.btn_next.setEnabled(False)
+    # -- 레벨 --------------------------------------------------------------
+    def _level(self) -> int:
+        c = self.prog.correct if self.prog else 0
+        if c < 8:
+            return 0
+        if c < 18:
+            return 1
+        return 2
 
-        quiz = theme.card()
-        qlay = QVBoxLayout(quiz)
-        qlay.setContentsMargins(18, 16, 18, 16)
-        qlay.setSpacing(14)
-        qlay.addWidget(self.mastery)
-        qlay.addWidget(self.lbl_q)
-        qlay.addLayout(self.piece_box, 1)
-        qlay.addLayout(self.answers)
-        qlay.addWidget(self.lbl_fb)
-        qlay.addWidget(self.btn_next, 0, Qt.AlignCenter)
+    def _pieces(self) -> List[int]:
+        base = [chess.KING, chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT]
+        return base + [chess.PAWN] if self._level() >= 2 else base
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(4, 4, 4, 4)
-        root.setSpacing(12)
-        root.addWidget(legend)
-        root.addWidget(quiz, 1)
+    def _kinds(self) -> List[str]:
+        # 레벨 1은 글자→기물부터. 익숙해지면 기물→글자도 섞는다.
+        return ["letter2glyph"] if self._level() == 0 else ["letter2glyph", "glyph2letter"]
 
-        self._piece: Optional[int] = None
-        self._kind = "glyph2letter"
-        self._answered = False
-        self._last_id = ""
-        self._queue: List[str] = []
-        self._advance_timer = QTimer(self)
-        self._advance_timer.setSingleShot(True)
-        self._advance_timer.timeout.connect(self._new_question)
-        self._new_question()
+    def _level_text(self) -> str:
+        lvl = self._level()
+        if lvl == 0:
+            return "레벨 1 · K Q R B N 익히기 (글자 → 기물)"
+        if lvl == 1:
+            return "레벨 2 · 글자 ↔ 기물 양방향"
+        return "레벨 3 · 폰(글자 없음)까지"
 
-    def _clear(self, layout) -> None:
-        while layout.count():
-            item = layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
-
+    # -- 문제 선택 ---------------------------------------------------------
     def _ids(self) -> List[str]:
-        return [f"{k}:{p}" for k in ("glyph2letter", "letter2glyph")
-                for p in (chess.KING, chess.QUEEN, chess.ROOK, chess.BISHOP,
-                          chess.KNIGHT, chess.PAWN)]
+        return [f"{k}:{p}" for k in self._kinds() for p in self._pieces()]
 
     def _next_id(self) -> str:
         if not self._queue:
-            # 약점 가중치로 뽑되 같은 게 연달아 나오지 않게 중복을 걸러 담는다.
             pool = self._ids()
             chosen: List[str] = []
             guard = 0
-            while len(chosen) < 8 and guard < 80:
+            while len(chosen) < min(8, len(pool)) and guard < 80:
                 guard += 1
                 pick = self.prog.pick(pool) if self.prog else random.choice(pool)
                 if pick in chosen:
@@ -377,66 +435,105 @@ class Stage1Pieces(_Stage):
             self._queue.extend(chosen)
         return self._queue.pop(0)
 
+    # -- 화면 --------------------------------------------------------------
+    def _clear(self, layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+    def _setup_board(self) -> None:
+        """빈 보드에 목표 기물 하나만 두고, 갈 수 있는 칸을 점으로 보여준다."""
+        sq = chess.parse_square("d2" if self._piece == chess.PAWN else "d4")
+        b = chess.Board(None)  # 빈 보드
+        b.set_piece_at(sq, chess.Piece(self._piece, chess.WHITE))
+        b.turn = chess.WHITE
+        self.board.set_position(b.fen())
+        self.board.show_moves(sq)
+
     def _new_question(self) -> None:
         self._advance_timer.stop()
-        self._clear(self.piece_box)
+        self._clear(self.prompt)
         self._clear(self.answers)
         self._answered = False
         self.btn_next.setEnabled(False)
         self.lbl_fb.setText("")
         theme.set_state(self.lbl_fb, "muted")
+        self.lbl_level.setText(self._level_text())
 
         self._last_id = self._next_id()
         self._kind, str_piece = self._last_id.split(":", 1)
         self._piece = int(str_piece)
-        pool = [chess.KING, chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT]
-        if self._kind == "glyph2letter":
-            self.lbl_q.setText("이 기물의 글자는?")
-            self.piece_box.addWidget(glyph_label(self._piece, 96))
-            for opt in list(_ANSWER_LETTERS) + ["폰(없음)"]:
-                btn = QPushButton(opt)
-                btn.setMinimumWidth(64)
-                btn.clicked.connect(lambda _=False, o=opt: self._answer_letter(o))
-                self.answers.addWidget(btn)
-        else:
+        self._setup_board()
+
+        if self._kind == "letter2glyph":
             letter = "(없음)" if self._piece == chess.PAWN else _LETTER[self._piece]
-            self.lbl_q.setText("이 글자는 어느 기물?")
-            self.piece_box.addWidget(big_text_label(letter, 96))
-            for pt in pool + [chess.PAWN]:
+            self.lbl_q.setText(f"'{letter}' 는 어느 기물? 보드의 점(움직임)을 보고 고르세요.")
+            self.prompt.addWidget(big_text_label(letter, 72))
+            # 정답 전에는 기물을 숨겨서 '움직임만' 보고 고르게 한다.
+            self.board.set_hide_pieces(True)
+            self.lbl_board.setText(
+                "노란 칸 = 기물이 있는 자리, 점 = 이 기물이 갈 수 있는 칸."
+            )
+            for pt in self._pieces():
                 btn = QPushButton(_GLYPH[pt])
-                # 위와 같은 이유로 폰트는 QSS 로 지정한다.
-                btn.setStyleSheet('font-family: "Segoe UI Symbol"; font-size: 34px;')
-                btn.setMinimumWidth(72)
+                btn.setStyleSheet('font-family: "Segoe UI Symbol"; font-size: 30px;')
+                btn.setMinimumWidth(66)
                 btn.clicked.connect(lambda _=False, p=pt: self._answer_piece(p))
                 self.answers.addWidget(btn)
+        else:
+            self.lbl_q.setText("보드에서 이 기물의 글자는?")
+            self.board.set_hide_pieces(False)
+            self.lbl_board.setText(
+                "보드: 이 기물이 갈 수 있는 칸을 점으로 표시했어. 글자를 떠올려봐."
+            )
+            opts = list(_ANSWER_LETTERS)
+            if self._level() >= 2:
+                opts.append("(없음)")
+            for opt in opts:
+                btn = QPushButton(opt)
+                btn.setMinimumWidth(56)
+                btn.clicked.connect(lambda _=False, o=opt: self._answer_letter(o))
+                self.answers.addWidget(btn)
 
-    def _answer_letter(self, opt: str) -> None:
-        if self._answered:
-            return
-        expect = "(없음)" if self._piece == chess.PAWN else _LETTER[self._piece]
-        ok = opt == expect or (opt == "폰(없음)" and self._piece == chess.PAWN)
-        self._finish(ok, f"정답! {expect}" if ok else f"'{opt}' 는 아니야. 정답: {expect}")
+    # -- 채점 --------------------------------------------------------------
+    def _explain(self, ok: bool) -> str:
+        piece = self._piece
+        name = _PIECE_KR[piece]
+        letter = "(없음)" if piece == chess.PAWN else _LETTER[piece]
+        head = "정답! " if ok else "아니야. "
+        if piece == chess.PAWN:
+            who = f"폰은 글자가 없어(정답 표시: {letter})"
+        else:
+            who = f"{letter} = {name}"
+        return f"{head}{who}. {_LETTER_REASON[piece]} {_MOVE_KR[piece]}"
 
     def _answer_piece(self, pt: int) -> None:
         if self._answered:
             return
         ok = pt == self._piece
-        name = _PIECE_KR[self._piece]
-        lab = "(없음)" if self._piece == chess.PAWN else _LETTER[self._piece]
-        self._finish(ok, "정답!" if ok else f"정답은 {name} ({lab}) 야.")
+        self.board.set_hide_pieces(False)  # 정답 공개: 기물 + 움직임을 같이 본다
+        self._finish(ok, self._explain(ok))
+
+    def _answer_letter(self, opt: str) -> None:
+        if self._answered:
+            return
+        expect = "(없음)" if self._piece == chess.PAWN else _LETTER[self._piece]
+        ok = opt == expect
+        self._finish(ok, self._explain(ok))
 
     def _finish(self, ok: bool, msg: str) -> None:
         self._answered = True
         self._record(ok, self._last_id)
         if not ok:
-            msg += "   " + _PIECE_TIP[self._piece]
             # 틀린 건 잠깐 뒤에 다시 나오게 큐에 되돌린다.
             self._queue.insert(min(2, len(self._queue)), self._last_id)
         self.lbl_fb.setText(msg)
         theme.set_state(self.lbl_fb, "success" if ok else "danger")
         self.btn_next.setEnabled(True)
         if ok:
-            self._advance_timer.start(900)
+            self._advance_timer.start(1500)
 
     def start(self) -> None:
         self._advance_timer.stop()
