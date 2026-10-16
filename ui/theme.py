@@ -64,6 +64,10 @@ QFrame#CardFlat {{
     border: 1px solid {BORDER};
     border-radius: 10px;
 }}
+QFrame#Card[state="primary"] {{
+    background: {SURFACE_2};
+    border: 1px solid {ACCENT};
+}}
 
 QLabel[role="h1"] {{ font-size: 20px; font-weight: 700; }}
 QLabel[role="h2"] {{ font-size: 15px; font-weight: 700; }}
@@ -71,6 +75,7 @@ QLabel[role="muted"] {{ color: {MUTED}; }}
 QLabel[role="small"] {{ color: {MUTED}; font-size: 12px; }}
 QLabel[role="big"] {{ font-size: 30px; font-weight: 700; }}
 QLabel[role="caption"] {{ color: {MUTED}; font-size: 12px; font-weight: 600; }}
+QLabel[state="accent"] {{ color: {ACCENT}; font-weight: 700; }}
 
 QLabel[state="success"] {{ color: {SUCCESS}; font-weight: 600; }}
 QLabel[state="danger"] {{ color: {DANGER}; font-weight: 600; }}
