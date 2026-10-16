@@ -26,6 +26,7 @@ from core import config as cfg_mod
 from core import drive
 from core import rclone as rclone_mod
 from ui import theme
+from ui.widgets import collapsible_help
 from ui.worker import PipelineWorker
 
 
@@ -84,16 +85,14 @@ class SettingsTab(QWidget):
         drive_form.addRow("", drive_actions)
         drive_form.addRow("", drive_actions2)
 
-        self.lbl_drive_help = theme.label(
+        self.lbl_drive_help = collapsible_help(
             "가장 쉬운 길 (API 키): 드라이브에서 부모 폴더 우클릭 → 공유 → "
             "'링크가 있는 모든 사용자 · 뷰어' 로 바꾸고, Cloud Console 에서 API 키 하나만 "
             "발급(동의화면 불필요)해 위 'API 키' 칸에 붙여넣기 → '드라이브 → 로컬로 받기'.\n"
             "비공개로 쓰려면: OAuth 클라이언트(데스크톱 앱) json 을 'credentials.json 선택' "
             "으로 고르고 '구글 인증' (브라우저 로그인).\n"
-            "받아둔 파일은 '로컬 PGN 폴더'에 저장되며, 이후에는 '로컬 동기화' 만 돌려도 됨.",
-            role="muted",
+            "받아둔 파일은 '로컬 PGN 폴더'에 저장되며, 이후에는 '로컬 동기화' 만 돌려도 됨."
         )
-        self.lbl_drive_help.setWordWrap(True)
 
         card_drive = theme.card()
         cd = QVBoxLayout(card_drive)
@@ -109,14 +108,12 @@ class SettingsTab(QWidget):
         self.btn_browse_local = QPushButton("폴더 선택")
         self.btn_browse_local.setProperty("variant", "ghost")
         self.btn_browse_local.clicked.connect(self._browse_local)
-        self.lbl_local = theme.label(
+        self.lbl_local = collapsible_help(
             "하위폴더 이름(Bot / Human)으로 봇전·사람전을 자동 구분. 구글·API·비용 없음.\n"
             "드라이브에 있는 PGN을 쓰려면: (1) 드라이브에서 폴더를 zip 으로 받아 여기에 풀기, "
             "또는 (2) Google Drive for Desktop 을 설치해 나타나는 로컬 경로를 여기 지정. "
-            "둘 다 구글 인증(credentials.json)이 필요 없음.",
-            role="muted",
+            "둘 다 구글 인증(credentials.json)이 필요 없음."
         )
-        self.lbl_local.setWordWrap(True)
         self.btn_local_sync = QPushButton("로컬 동기화")
         self.btn_local_sync.setProperty("variant", "primary")
         self.btn_local_sync.clicked.connect(self._sync_local)
@@ -191,16 +188,14 @@ class SettingsTab(QWidget):
         rclone_form.addRow(theme.label("마운트 상태", role="muted"), self.lbl_mount)
         rclone_form.addRow("", self.btn_rclone)
         rclone_form.addRow("", mount_actions)
-        self.lbl_rclone = theme.label(
+        self.lbl_rclone = collapsible_help(
             "rclone 을 쓰면 앱에 구글 API 키/OAuth 가 전혀 필요 없다(rclone 이 인증을 들고 있음). "
             "rclone.conf 를 기본 위치가 아닌 곳에 뒀으면 그 경로도 넣는다(예: "
             "C:\\Users\\<나>\\.config\\chesspgn-auto\\rclone.conf).\n"
             "① 'rclone 으로 받기': .pgn 을 '로컬 PGN 폴더'로 복사한 뒤 바로 동기화(인터넷 없이도 이후 읽힘).\n"
             "② '드라이브 마운트': 드라이브를 로컬 드라이브 문자(예: X:)로 붙인다. 복사가 필요 없어 늘 최신이지만 "
-            "Windows 는 WinFsp 가 있어야 하고, 붙인 드라이브 문자를 '로컬 PGN 폴더'로 쓰면 된다.",
-            role="muted",
+            "Windows 는 WinFsp 가 있어야 하고, 붙인 드라이브 문자를 '로컬 PGN 폴더'로 쓰면 된다."
         )
-        self.lbl_rclone.setWordWrap(True)
 
         card_rclone = theme.card()
         cr = QVBoxLayout(card_rclone)
@@ -245,13 +240,11 @@ class SettingsTab(QWidget):
         )
         sf_form.addRow(theme.label("실수 임계값(loss)", role="muted"), self.sp_threshold)
 
-        self.lbl_sf = theme.label(
-            "Stockfish 는 '내 실수' 분석에만 쓰인다(없어도 기보 트레이닝은 됨). "
+        self.lbl_sf = collapsible_help(
+            "Stockfish 는 '내 실수' 분석에만 쓰인다(없어도 기보 트레이닝은 됨).\n"
             "'자동 감지' 를 누르면 PATH·앱 옆·흔한 설치 위치에서 stockfish*.exe 를 찾아 채워준다. "
-            "없으면 stockfishchess.org 에서 받아 아무 폴더에 풀고 '찾아보기' 로 지정하면 된다.",
-            role="muted",
+            "없으면 stockfishchess.org 에서 받아 아무 폴더에 풀고 '찾아보기' 로 지정하면 된다."
         )
-        self.lbl_sf.setWordWrap(True)
 
         card_sf = theme.card()
         cs = QVBoxLayout(card_sf)

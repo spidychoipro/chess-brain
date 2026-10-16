@@ -61,6 +61,10 @@ class StatsTab(QWidget):
         layout.addLayout(toolbar)
         layout.addWidget(summary)
         layout.addWidget(theme.label("자주 틀리는 실수 TOP", role="h2"))
+        self.lbl_tip = theme.label(
+            "여기 위에 있는 실수부터 복습하면 효율이 좋아.", role="small"
+        )
+        layout.addWidget(self.lbl_tip)
         layout.addWidget(self.table, 1)
 
         self.cb_source.currentIndexChanged.connect(self.refresh)
@@ -89,3 +93,9 @@ class StatsTab(QWidget):
             for c, v in enumerate(vals):
                 self.table.setItem(i, c, QTableWidgetItem(v))
         self.table.resizeColumnsToContents()
+        if rows:
+            self.lbl_tip.setText("여기 위에 있는 실수부터 복습하면 효율이 좋아.")
+        else:
+            self.lbl_tip.setText(
+                "아직 자주 틀린 기록이 없어. '내 실수' 탭에서 복습을 시작하면 여기에 쌓여."
+            )

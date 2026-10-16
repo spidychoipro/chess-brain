@@ -38,6 +38,46 @@ def _uci_of(fen: str, san: str) -> Optional[str]:
         return None
 
 
+def collapsible_help(text: str) -> QWidget:
+    """긴 설명을 첫 줄만 보여주고 나머지는 '자세히'로 접어둔다.
+
+    설정 화면이 빽빽해 보이지 않게 하려는 것. 내용은 그대로 두고
+    접기만 하므로 정보는 잃지 않는다.
+    """
+    box = QWidget()
+    lay = QVBoxLayout(box)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(6)
+
+    head, _, rest = text.partition("\n")
+    summary = theme.label(head, role="muted")
+    summary.setWordWrap(True)
+    lay.addWidget(summary)
+
+    rest = rest.strip()
+    if not rest:
+        return box
+
+    detail = theme.label(rest, role="small")
+    detail.setWordWrap(True)
+    detail.setVisible(False)
+
+    btn = QPushButton("자세히 ▾")
+    btn.setProperty("variant", "ghost")
+    btn.setCheckable(True)
+    btn.setMaximumWidth(96)
+
+    def _toggle(on: bool) -> None:
+        detail.setVisible(on)
+        btn.setText("접기 ▴" if on else "자세히 ▾")
+
+    btn.toggled.connect(_toggle)
+    lay.addWidget(detail)
+    lay.addWidget(btn, 0, Qt.AlignLeft)
+    return box
+
+
+
 class ReviewPanel(QWidget):
     """Board-input spaced-repetition drill over a list of items."""
 

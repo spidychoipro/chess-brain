@@ -35,6 +35,10 @@ class HomeTab(QWidget):
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
 
+        # 지금 해야 할 일을 맨 위에 한 줄로 크게 보여준다.
+        self.lbl_now = theme.label("", role="h2")
+        self.lbl_now.setWordWrap(True)
+
         intro = theme.label(
             "틀린 실수일수록 더 자주, 잊어버리기 직전에 다시 만나는 앱. \n"
             "왼쪽 '내 실수' 탭부터 시작하면 됨.",
@@ -45,6 +49,7 @@ class HomeTab(QWidget):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(14)
         layout.addWidget(theme.label("홈", role="h1"))
+        layout.addWidget(self.lbl_now)
         layout.addLayout(grid)
         layout.addWidget(intro)
         layout.addStretch(1)
@@ -58,6 +63,17 @@ class HomeTab(QWidget):
         self._set_number(self.card_due_p, str(pc["due"]))
         self._set_number(self.card_new, str(mc["unreviewed"]))
         self._set_number(self.card_today, str(today["total"]))
+
+        # 복습할 게 있으면 그 카드를 강조하고 안내 문구도 바꾼다.
+        due = mc["due"]
+        if due > 0:
+            theme.set_state(self.card_due_m, "primary")
+            self.lbl_now.setText(f"지금 복습할 실수 {due}개 — '내 실수' 탭에서 바로 시작")
+            theme.set_state(self.lbl_now, "accent")
+        else:
+            theme.set_state(self.card_due_m, "")
+            self.lbl_now.setText("지금 할 복습은 없어. 새 게임을 동기화하거나 기보 트레이닝을 해봐.")
+            theme.set_state(self.lbl_now, "muted")
 
     def _set_number(self, card: QWidget, value: str) -> None:
         for child in card.findChildren(QWidget):
