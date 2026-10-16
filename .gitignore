@@ -9,6 +9,7 @@ venv/
 data/*.db
 data/*.sqlite3
 data/*.log
+data/notation_progress.json
 config/config.json
 config/token.json
 config/credentials.json
