@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from core import config as cfg_mod
 from core import db
+from core.utils import classify_loss
 from ui import theme
 from ui.board import ChessBoard
 from ui.widgets import ReviewDialog, _uci_of
@@ -52,6 +53,14 @@ class MistakesTab(QWidget):
         self.cb_source.setCurrentIndex(self.cb_source.findData("both"))
 
         self.cb_only_wrong = QCheckBox("자주 틀린 것만 (wrong ≥ 1)")
+
+        # 손실 폰 기준 등급 필터. Grok 지적처럼 '구분이 없다'는 걸 채운다.
+        self.cb_grade = QComboBox()
+        self.cb_grade.addItem("등급 전체", "all")
+        self.cb_grade.addItem("블런더만", "blunder")
+        self.cb_grade.addItem("실수 이상", "mistake")
+        self.cb_grade.addItem("부정확만", "inaccuracy")
+
         self.lbl_stats = theme.label("", role="muted")
         self.btn_analyze = QPushButton("실수 분석 (Stockfish)")
         self.btn_review = QPushButton("실수 복습 시작")
@@ -62,14 +71,26 @@ class MistakesTab(QWidget):
         tool.setContentsMargins(14, 10, 14, 10)
         tool.addWidget(QLabel("소스"))
         tool.addWidget(self.cb_source)
+        tool.addWidget(QLabel("등급"))
+        tool.addWidget(self.cb_grade)
         tool.addWidget(self.cb_only_wrong)
         tool.addStretch(1)
         tool.addWidget(self.btn_analyze)
         tool.addWidget(self.btn_review)
 
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(
-            ["손실(loss)", "소스", "내가 둔 수", "엔진 정답", "맞음", "틀림", "다음 복습"]
+            [
+                "손실(loss)",
+                "등급",
+                "소스",
+                "내가 둔 수",
+                "엔진 정답",
+                "상대 응수",
+                "맞음",
+                "틀림",
+                "다음 복습",
+            ]
         )
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -121,6 +142,7 @@ class MistakesTab(QWidget):
         self.btn_analyze.clicked.connect(self._analyze)
         self.btn_review.clicked.connect(self._review)
         self.cb_source.currentIndexChanged.connect(self.refresh)
+        self.cb_grade.currentIndexChanged.connect(self.refresh)
         self.cb_only_wrong.stateChanged.connect(self.refresh)
         self.table.currentCellChanged.connect(lambda *_: self._on_row())
         self.table.itemDoubleClicked.connect(lambda *_: self._review_current())
@@ -140,6 +162,9 @@ class MistakesTab(QWidget):
         self.board.clear_marks()
         my_san = r.get("my_san") or ""
         best_san = r.get("best_san") or ""
+        reply_san = r.get("reply_san") or ""
+        if reply_san == "-":   # 국면이 끝나 응수가 없는 경우
+            reply_san = ""
         my_uci = _uci_of(fen, my_san)
         best_uci = _uci_of(fen, best_san)
         if my_uci:
@@ -149,9 +174,19 @@ class MistakesTab(QWidget):
         self.lbl_preview_move.setText(
             f"빨강 화살표 = 내가 둔 수  ·  초록 화살표 = 엔진 정답"
         )
+        grade = classify_loss(r.get("loss"))[1]
+        if reply_san:
+            why = (
+                f"내가 {my_san or '?'}를 두니 상대는 {reply_san}(으)로 응수할 수 있었어. "
+                f"그래서 대신 {best_san or '?'}가 좋았어."
+            )
+        else:
+            why = (
+                "상대 응수는 아직 없음 — 위 '실수 분석'을 다시 돌리면 채워진다."
+            )
         self.lbl_preview.setText(
-            f"내 수 {my_san or '?'}   →   정답 {best_san or '?'}\n"
-            f"(손실 {r.get('loss', 0):.2f})  한 번 더 복습하려면 '실수 복습 시작'을 눌러라."
+            f"내 수 {my_san or '?'}   →   정답 {best_san or '?'}   "
+            f"({grade} · 손실 {r.get('loss', 0):.2f})\n{why}"
         )
 
     # -- data ---------------------------------------------------------------
@@ -167,16 +202,20 @@ class MistakesTab(QWidget):
             f"아직 안 본 것 {counts['unreviewed']}  ·  미분석 게임 {gc['pending']}"
         )
         rows = db.list_mistakes(source=src, only_wrong=only_wrong)
+        rows = self._filter_by_grade(rows)
         self._rows = rows
         self.table.setRowCount(0)
         for r in rows:
             i = self.table.rowCount()
             self.table.insertRow(i)
+            grade = classify_loss(r.get("loss"))[1]
             vals = [
                 f"{r['loss']:.2f}",
+                grade,
                 "봇" if r["source"] == "bot" else "사람",
                 r["my_san"],
                 r["best_san"],
+                r.get("reply_san") or "-",
                 str(r["correct"]),
                 str(r["wrong"]),
                 _fmt_ts(r["due_at"]),
@@ -187,6 +226,26 @@ class MistakesTab(QWidget):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.table.setItem(i, c, item)
         self.table.resizeColumnsToContents()
+
+    def _filter_by_grade(self, rows: list) -> list:
+        want = self.cb_grade.currentData()
+        if want in (None, "all"):
+            return rows
+
+        def keep(r) -> bool:
+            try:
+                loss = float(r.get("loss") or 0.0)
+            except (TypeError, ValueError):
+                loss = 0.0
+            if want == "blunder":
+                return loss >= 2.0
+            if want == "mistake":
+                return loss >= 1.0
+            if want == "inaccuracy":
+                return loss < 1.0
+            return True
+
+        return [r for r in rows if keep(r)]
 
     def _cfg(self):
         return cfg_mod.load_config()
@@ -260,16 +319,22 @@ class MistakesTab(QWidget):
         games = int(result.get("games", 0) or 0)
         mistakes = int(result.get("mistakes", 0) or 0)
         problems = int(result.get("problems", 0) or 0)
+        filled = int(result.get("filled", 0) or 0)
         reason = result.get("reason", "")
         if mistakes:
             msg = f"게임 {games}개 분석 완료 — 실수 {mistakes}개 / 복습문제 {problems}개."
+            if filled:
+                msg += f"\n옛 실수의 상대 응수 {filled}개도 채웠다."
         elif games:
             msg = (
                 f"게임 {games}개 분석 완료 — 손실 0.8 을 넘는 실수는 없었다.\n"
                 "실수가 너무 적게 잡히면 설정에서 임계값을 낮춰라."
             )
         elif reason == "all_analyzed":
-            msg = "새로 분석할 게임이 없다. 이미 다 분석된 상태다."
+            if filled:
+                msg = f"새로 분석할 게임은 없다. 옛 실수의 상대 응수 {filled}개를 채웠다."
+            else:
+                msg = "새로 분석할 게임이 없다. 이미 다 분석된 상태다."
         elif not result.get("folder_ok", True):
             msg = (
                 "분석할 게임이 없고, 로컬 PGN 폴더도 못 찾았다:\n"

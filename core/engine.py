@@ -169,6 +169,7 @@ class MistakeResult:
     loss: float
     best_san: str
     my_san: str
+    reply_san: str = ""   # 내가 둔 수에 대한 상대의 최선 응수(왜 나빴는지)
 
 
 class Stockfish:
@@ -272,12 +273,21 @@ def find_mistake(
         loss = score_before - score_after
 
         if loss >= threshold:
+            # 왜 나빴는지: 상대가 어떻게 응수했을지(처벌 수)를 같이 남긴다.
+            # 국면이 끝났으면(메이트/무승부) 응수가 없으니 건너뛴다.
+            reply_san = ""
+            if not after_board.is_game_over():
+                try:
+                    reply_san = engine.best_move(after_board).get("best_san") or ""
+                except Exception:  # noqa: BLE001 - 응수 못 구해도 실수 자체는 살린다
+                    reply_san = ""
             return MistakeResult(
                 eval_before=round(score_before, 3),
                 eval_after=round(score_after, 3),
                 loss=round(loss, 3),
                 best_san=best_san,
                 my_san=my_san,
+                reply_san=reply_san,
             )
         return None
     finally:

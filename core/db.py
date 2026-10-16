@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS mistakes (
     context_sans TEXT,
     my_san TEXT,
     best_san TEXT,
+    reply_san TEXT DEFAULT '',
     eval_before REAL,
     eval_after REAL,
     loss REAL,
@@ -117,9 +118,17 @@ def init_db() -> None:
     conn = connect()
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """이미 만들어진 DB 에 새 컬럼을 붙인다(재분석 없이 쓰게)."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(mistakes)").fetchall()}
+    if "reply_san" not in cols:
+        conn.execute("ALTER TABLE mistakes ADD COLUMN reply_san TEXT DEFAULT ''")
 
 
 def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
@@ -331,6 +340,7 @@ def add_mistake(
     source_game_id: str,
     source: str,
     ply: int,
+    reply_san: str = "",
 ) -> int:
     """Insert a mistake, or return the id of the existing identical one."""
     # 최선수를 그대로 둔 수는 실수가 아니다(가짜 실수 방지).
@@ -341,16 +351,17 @@ def add_mistake(
         cur = conn.execute(
             """
             INSERT OR IGNORE INTO mistakes (
-                fen, context_sans, my_san, best_san, eval_before, eval_after,
-                loss, source_game_id, source, ply,
+                fen, context_sans, my_san, best_san, reply_san, eval_before,
+                eval_after, loss, source_game_id, source, ply,
                 ease, interval, reps, lapses, due_at, reviewed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2.5, 0.0, 0, 0, 0, 0)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2.5, 0.0, 0, 0, 0, 0)
             """,
             (
                 fen,
                 (context_sans or "")[:800],
                 my_san or "",
                 best_san or "",
+                reply_san or "",
                 float(eval_before),
                 float(eval_after),
                 float(loss),
@@ -475,6 +486,32 @@ def list_mistakes(
             (*params, limit),
         ).fetchall()
         return [_row_to_dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def mistakes_missing_reply(limit: int = 500) -> List[Dict[str, Any]]:
+    """상대 응수가 아직 없는 실수(옛 데이터)를 모은다."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, fen, my_san FROM mistakes "
+            "WHERE COALESCE(reply_san,'')='' LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [_row_to_dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def set_mistake_reply(mistake_id: int, reply_san: str) -> None:
+    conn = connect()
+    try:
+        conn.execute(
+            "UPDATE mistakes SET reply_san=? WHERE id=?",
+            (reply_san or "", mistake_id),
+        )
+        conn.commit()
     finally:
         conn.close()
 

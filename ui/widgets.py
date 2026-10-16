@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from core import db
 from core import sr as sr_mod
+from core.utils import classify_loss
 from ui import theme
 from ui.board import ChessBoard
 
@@ -42,7 +43,7 @@ class ReviewPanel(QWidget):
 
     finished = Signal(dict)
 
-    FEEDBACK_MS = 900
+    FEEDBACK_MS = 1300
 
     def __init__(
         self,
@@ -105,6 +106,10 @@ class ReviewPanel(QWidget):
         self.lbl_feedback = theme.label("", role="small")
         self.lbl_feedback.setWordWrap(True)
 
+        # '왜 이 수가 실수였는지' 한 줄. 정답/모르겠음 뒤에 채운다.
+        self.lbl_reason = theme.label("", role="muted")
+        self.lbl_reason.setWordWrap(True)
+
         side = QVBoxLayout()
         side.setSpacing(12)
         side.addWidget(self.lbl_section)
@@ -112,6 +117,7 @@ class ReviewPanel(QWidget):
         side.addWidget(self.lbl_prompt)
         side.addWidget(self.btn_reveal)
         side.addWidget(self.lbl_feedback)
+        side.addWidget(self.lbl_reason)
         side.addStretch(1)
 
         body = QHBoxLayout()
@@ -132,6 +138,30 @@ class ReviewPanel(QWidget):
 
     # -- queue handling -----------------------------------------------------
 
+    def _reason_text(self, item: Dict[str, Any]) -> str:
+        """실수의 '왜'. 상대의 응수(처벌 수)를 보여준다."""
+        if self.item_type != "mistake":
+            return ""
+        my = item.get("my_san") or "?"
+        best = item.get("best_san") or "?"
+        reply = item.get("reply_san") or ""
+        if reply == "-":   # 국면이 끝나 응수가 없는 경우
+            reply = ""
+        try:
+            loss = float(item.get("loss") or 0.0)
+        except (TypeError, ValueError):
+            loss = 0.0
+        grade = classify_loss(loss)[1]
+        if reply:
+            return (
+                f"{grade} · 손실 {loss:.2f}   |   내 수 {my} → 상대 응수 {reply}"
+                f"   |   엔진 정답 {best}"
+            )
+        return (
+            f"{grade} · 손실 {loss:.2f}   |   내 수 {my} → 엔진 정답 {best}"
+            f"   (상대 응수는 '실수 분석'을 다시 하면 채워짐)"
+        )
+
     def _show_current(self) -> None:
         self._timer.stop()
         if not self.queue:
@@ -147,6 +177,7 @@ class ReviewPanel(QWidget):
         self.lbl_context.setText(ctx)
         self.lbl_feedback.setText("")
         theme.set_state(self.lbl_feedback, "muted")
+        self.lbl_reason.setText("")
         self._last_uci = None
         self._wrong_streak = 0
         self.board.set_position(item["fen"])
@@ -222,6 +253,7 @@ class ReviewPanel(QWidget):
                 self.board.show_hint(self._last_uci)
             self.lbl_feedback.setText(f"정답!  ({target})")
             theme.set_state(self.lbl_feedback, "success")
+            self.lbl_reason.setText(self._reason_text(item))
             self._timer.start(self.FEEDBACK_MS)
             return
 
@@ -252,6 +284,7 @@ class ReviewPanel(QWidget):
             f"정답: 초록 화살표  ({target})" if target else "정답 정보가 없는 문제야."
         )
         theme.set_state(self.lbl_feedback, "danger")
+        self.lbl_reason.setText(self._reason_text(item))
         self.queue.pop(0)
         self.queue.insert(0, item)
         self._timer.start(self.FEEDBACK_MS + 600)
