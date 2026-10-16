@@ -133,6 +133,17 @@ class ChessBoard(QWidget):
         self._glow = sq
         self.update()
 
+    def show_moves(self, sq: int) -> None:
+        """해당 칸 기물이 갈 수 있는 칸을 점으로 표시한다(학습용).
+
+        기물 숨기기와 같이 쓰면 '움직임만' 보고 어떤 기물인지 맞히는 문제가 된다.
+        """
+        self._selected = sq
+        self._legal_targets = [
+            m.to_square for m in self.board.legal_moves if m.from_square == sq
+        ]
+        self.update()
+
     def clear_picks(self) -> None:
         self._picks = []
         self.update()
