@@ -270,10 +270,21 @@ class MainWindow(QMainWindow):
         )
         self._auto_worker = worker
         worker.done.connect(self._on_auto_caught_up)
+        worker.message.connect(self._on_auto_message)
         worker.failed.connect(
             lambda msg: self.lbl_sync.setText(f"대국 확인 실패: {msg}")
         )
         worker.start()
+
+    def _on_auto_message(self, message: str) -> None:
+        """도구가 찍는 줄을 헤더에도 바로 보여준다 (무슨 일 하는지 보이게)."""
+        text = str(message).strip().splitlines()
+        if not text:
+            return
+        line = text[-1]
+        if len(line) > 70:
+            line = line[:67] + "…"
+        self.lbl_sync.setText(line)
 
     def _on_auto_caught_up(self, result: dict) -> None:
         new = int(result.get("new_games", 0) or 0)
