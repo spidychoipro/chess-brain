@@ -255,6 +255,11 @@ class MainWindow(QMainWindow):
         from core import pipeline
         from ui.worker import PipelineWorker
 
+        if getattr(self, "_selftest", False):
+            # 빌드 검증은 1.5초 만에 끝나는데, 그 사이 시작한 스레드가 남으면
+            # 종료 순간 크래시한다. 검증 모드에서는 자동 확인을 하지 않는다.
+            self.lbl_sync.setText("자동 확인 건너뜀 (검증 모드)")
+            return
         if self._auto_worker is not None and self._auto_worker.isRunning():
             return
         self.lbl_sync.setText("새 대국 확인 중…")
@@ -280,6 +285,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt name
         running = [getattr(page, "_worker", None) for page in self._pages.values()]
+        running.append(getattr(self, "_auto_worker", None))
         running = [worker for worker in running if worker is not None and worker.isRunning()]
         if running:
             for worker in running:

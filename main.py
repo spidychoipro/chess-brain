@@ -71,6 +71,7 @@ def _selftest() -> int:
     app = QApplication(sys.argv)
     theme.apply(app)
     window = MainWindow()
+    window._selftest = True
     window.show()
     if log:
         log("selftest-shown")
