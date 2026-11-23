@@ -94,7 +94,7 @@ class SettingsTab(QWidget):
             "발급(동의화면 불필요)해 위 'API 키' 칸에 붙여넣기 → '드라이브 → 로컬로 받기'.\n"
             "비공개로 쓰려면: OAuth 클라이언트(데스크톱 앱) json 을 'credentials.json 선택' "
             "으로 고르고 '구글 인증' (브라우저 로그인).\n"
-            "받아둔 파일은 '로컬 PGN 폴더'에 저장되며, 이후에는 '로컬 동기화' 만 돌려도 됨."
+            "받아둔 파일은 '로컬 PGN 폴더'에 저장되며, 이후에는 '대국 가져오기' 만 눌러도 됨."
         )
 
         card_drive = theme.card()
@@ -195,7 +195,7 @@ class SettingsTab(QWidget):
             "rclone 을 쓰면 앱에 구글 API 키/OAuth 가 전혀 필요 없다(rclone 이 인증을 들고 있음). "
             "rclone.conf 를 기본 위치가 아닌 곳에 뒀으면 그 경로도 넣는다(예: "
             "C:\\Users\\<나>\\.config\\chesspgn-auto\\rclone.conf).\n"
-            "① 'rclone 으로 받기': .pgn 을 '로컬 PGN 폴더'로 복사한 뒤 바로 동기화(인터넷 없이도 이후 읽힘).\n"
+            "① 'rclone 으로 받기': .pgn 을 '로컬 PGN 폴더'로 복사한 뒤 '대국 가져오기'를 누르면 됨.\n"
             "② '드라이브 마운트': 드라이브를 로컬 드라이브 문자(예: X:)로 붙인다. 복사가 필요 없어 늘 최신이지만 "
             "Windows 는 WinFsp 가 있어야 하고, 붙인 드라이브 문자를 '로컬 PGN 폴더'로 쓰면 된다."
         )
