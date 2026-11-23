@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
 from core import config as cfg_mod
 from core import drive
 from core import rclone as rclone_mod
+from core import update as update_mod
+from core import version
 from ui import theme
 from ui.widgets import collapsible_help
 from ui.worker import PipelineWorker
@@ -32,6 +34,7 @@ from ui.worker import PipelineWorker
 
 class SettingsTab(QWidget):
     config_saved = Signal()
+    update_checked = Signal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -274,6 +277,27 @@ class SettingsTab(QWidget):
         cd2.addWidget(theme.label("기본값", role="h2"))
         cd2.addLayout(df)
 
+        card_update = theme.card()
+        cu = QVBoxLayout(card_update)
+        cu.setContentsMargins(18, 16, 18, 16)
+        cu.setSpacing(10)
+        cu.addWidget(theme.label("업데이트", role="h2"))
+        self.lbl_version = theme.label(f"현재 버전 v{version.__version__}", role="muted")
+        cu.addWidget(self.lbl_version)
+        update_actions = QHBoxLayout()
+        self.btn_update_check = QPushButton("업데이트 확인")
+        self.btn_update_check.setProperty("variant", "ghost")
+        self.btn_update_check.clicked.connect(self.check_update)
+        self.btn_release = QPushButton("릴리스 페이지 열기")
+        self.btn_release.setProperty("variant", "ghost")
+        self.btn_release.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(version.RELEASES_URL))
+        )
+        update_actions.addWidget(self.btn_update_check)
+        update_actions.addWidget(self.btn_release)
+        update_actions.addStretch(1)
+        cu.addLayout(update_actions)
+
         self.btn_save = QPushButton("설정 저장")
         self.btn_save.setProperty("variant", "primary")
         self.btn_save.clicked.connect(self._save)
@@ -293,6 +317,7 @@ class SettingsTab(QWidget):
         layout.addWidget(card_drive)
         layout.addWidget(card_sf)
         layout.addWidget(card_defaults)
+        layout.addWidget(card_update)
         layout.addWidget(self.btn_save)
         layout.addWidget(theme.label("로그", role="caption"))
         layout.addWidget(self.log, 1)
@@ -304,8 +329,8 @@ class SettingsTab(QWidget):
         self.scroll = scroll
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(24, 20, 16, 20)
-        outer.setSpacing(14)
+        outer.setContentsMargins(32, 24, 24, 24)
+        outer.setSpacing(20)
         outer.addWidget(theme.label("설정", role="h1"))
         # 눌러도 됐는지 안 됐는지 모르겠다는 문제가 있어서, 마지막 동작 결과를
         # 제목 아래에 항상 남긴다(로그까지 안 내려가도 보이게).
@@ -396,6 +421,34 @@ class SettingsTab(QWidget):
     def _set_status(self, text: str, state: str = "muted") -> None:
         self.lbl_status.setText(text)
         theme.set_state(self.lbl_status, state)
+
+    def check_update(self) -> None:
+        """GitHub 태그를 한 번만 조회해서 결과를 시그널로 알린다."""
+        self._run(
+            self.btn_update_check,
+            update_mod.check_latest,
+            "업데이트 확인 중…",
+            on_done=self._on_update_checked,
+            on_failed=lambda msg: self.update_checked.emit(
+                {"ok": False, "error": msg, "current": version.__version__}
+            ),
+        )
+
+    def _on_update_checked(self, result: dict) -> None:
+        if not isinstance(result, dict):
+            result = {"ok": False, "error": str(result), "current": version.__version__}
+        self.update_checked.emit(result)
+        if result.get("ok") and result.get("available"):
+            self._set_status(
+                f"새 버전 v{result['latest']} — '릴리스 페이지 열기'에서 받으세요.", "accent"
+            )
+            self.lbl_version.setText(
+                f"현재 v{result['current']} · 최신 v{result['latest']}"
+            )
+        elif result.get("ok"):
+            self._set_status("현재 버전이 최신이에요.", "success")
+        else:
+            self._set_status("업데이트 확인 실패 — 네트워크를 확인해보세요.", "danger")
 
     def _summarize(self, result: dict) -> str:
         if not isinstance(result, dict):

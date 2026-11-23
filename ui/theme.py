@@ -5,15 +5,17 @@ borders, radii, padding, fonts). Everything else is layout work in the tabs.
 """
 from __future__ import annotations
 
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtGui import QFont, QIcon, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QFrame, QLabel, QWidget
 
 # -- tokens -----------------------------------------------------------------
-BG = "#12141a"
-SURFACE = "#1b1e26"
-SURFACE_2 = "#232733"
-SURFACE_3 = "#2b3040"
-BORDER = "#2c3140"
+BG = "#0f1115"
+SURFACE = "#1c1f24"
+SURFACE_2 = "#252a35"
+SURFACE_3 = "#303746"
+BORDER = "#313847"
 TEXT = "#e8eaf0"
 MUTED = "#98a0b3"
 ACCENT = "#5b8cff"
@@ -27,10 +29,18 @@ WARNING = "#f0b429"
 
 STYLESHEET = f"""
 * {{
-    font-family: "Segoe UI", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    font-family: "Noto Sans KR", "Segoe UI", "Malgun Gothic", sans-serif;
 }}
 QWidget {{
     color: {TEXT};
+    font-size: 14px;
+}}
+#Toast {{
+    background: {SURFACE_3};
+    color: {TEXT};
+    border: 1px solid {ACCENT_STRONG};
+    border-radius: 10px;
+    padding: 12px 16px;
     font-size: 13px;
 }}
 #Root, QDialog {{
@@ -72,11 +82,11 @@ QFrame#Card[state="primary"] {{
     border: 1px solid {ACCENT};
 }}
 
-QLabel[role="h1"] {{ font-size: 20px; font-weight: 700; }}
-QLabel[role="h2"] {{ font-size: 15px; font-weight: 700; }}
+QLabel[role="h1"] {{ font-size: 26px; font-weight: 700; }}
+QLabel[role="h2"] {{ font-size: 17px; font-weight: 700; }}
 QLabel[role="muted"] {{ color: {MUTED}; }}
 QLabel[role="small"] {{ color: {MUTED}; font-size: 12px; }}
-QLabel[role="big"] {{ font-size: 30px; font-weight: 700; }}
+QLabel[role="big"] {{ font-size: 34px; font-weight: 700; }}
 QLabel[role="caption"] {{ color: {MUTED}; font-size: 12px; font-weight: 600; }}
 QLabel[state="accent"] {{ color: {ACCENT}; font-weight: 700; }}
 
@@ -114,8 +124,8 @@ QListWidget#Nav {{
 }}
 QListWidget#Nav::item {{
     color: {MUTED};
-    padding: 10px 12px;
-    border-radius: 9px;
+    padding: 12px 14px;
+    border-radius: 10px;
     margin: 2px 6px;
 }}
 QListWidget#Nav::item:hover {{
@@ -132,8 +142,8 @@ QPushButton {{
     background: {SURFACE_2};
     color: {TEXT};
     border: 1px solid {BORDER};
-    border-radius: 9px;
-    padding: 8px 14px;
+    border-radius: 10px;
+    padding: 10px 18px;
 }}
 QPushButton:hover {{ background: {SURFACE_3}; }}
 QPushButton:pressed {{ background: #1f2431; }}
@@ -162,7 +172,7 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
     border: 1px solid {BORDER};
     border-radius: 9px;
     padding: 8px 10px;
-    selection-background-color: {ACCENT};
+    selection-background-color: {ACCENT_STRONG};
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
     border: 1px solid {ACCENT};
@@ -183,7 +193,7 @@ QComboBox::down-arrow {{
 QComboBox QAbstractItemView {{
     background: {SURFACE_2};
     border: 1px solid {BORDER};
-    selection-background-color: {ACCENT};
+    selection-background-color: {ACCENT_STRONG};
     outline: 0;
 }}
 
@@ -255,7 +265,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 
 def apply(app) -> None:
     app.setStyleSheet(STYLESHEET)
-    app.setFont(QFont("Segoe UI", 10))
+    app.setFont(QFont("Noto Sans KR", 10))
 
 
 def card(parent: QWidget | None = None, flat: bool = False) -> QFrame:
@@ -285,3 +295,45 @@ def set_state(widget: QWidget, state: str) -> None:
     style.unpolish(widget)
     style.polish(widget)
     widget.update()
+
+
+# -- icons -------------------------------------------------------------------
+# Unicode chess glyphs look different per font and cannot be stroked cleanly.
+# These tiny SVGs keep every nav item the same weight and alignment.
+_ICON_SVG = {
+    "home": "<path fill='{c}' d='M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'/>",
+    "mistakes": (
+        "<circle cx='12' cy='12' r='9' fill='none' stroke='{c}' stroke-width='2'/>"
+        "<rect x='11' y='6' width='2' height='8' rx='1' fill='{c}'/>"
+        "<circle cx='12' cy='17' r='1.2' fill='{c}'/>"
+    ),
+    "training": (
+        "<path fill='{c}' d='M5 20V9l5 2 2-7 7 5-4 11z'/>"
+        "<circle cx='10' cy='8' r='1' fill='{BG}'/>"
+    ),
+    "stats": (
+        "<rect x='4' y='12' width='3' height='8' rx='1' fill='{c}'/>"
+        "<rect x='10' y='7' width='3' height='13' rx='1' fill='{c}'/>"
+        "<rect x='16' y='4' width='3' height='16' rx='1' fill='{c}'/>"
+    ),
+    "settings": (
+        "<path stroke='{c}' stroke-width='2' d='M4 7h16M4 12h16M4 17h16'/>"
+        "<circle cx='9' cy='7' r='2.5' fill='{SURFACE}' stroke='{c}' stroke-width='2'/>"
+        "<circle cx='15' cy='12' r='2.5' fill='{SURFACE}' stroke='{c}' stroke-width='2'/>"
+        "<circle cx='11' cy='17' r='2.5' fill='{SURFACE}' stroke='{c}' stroke-width='2'/>"
+    ),
+}
+
+
+def icon(key: str, color: str = MUTED) -> QIcon:
+    """Build a 24px QIcon from an inline SVG path."""
+    svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>" + _ICON_SVG.get(
+        key, _ICON_SVG["home"]
+    ).format(c=color, BG=BG, SURFACE=SURFACE) + "</svg>"
+    renderer = QSvgRenderer(QByteArray(svg.encode("utf-8")))
+    pixmap = QPixmap(24, 24)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
