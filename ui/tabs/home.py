@@ -111,6 +111,7 @@ class HomeTab(QWidget):
         for row in self._setup_rows:
             setup.addWidget(row)
 
+        self.empty_icon = theme.icon_label("empty", 44)
         self.lbl_empty = theme.label("", role="empty")
         self.lbl_empty.setWordWrap(True)
 
@@ -122,6 +123,7 @@ class HomeTab(QWidget):
         layout.addLayout(actions)
         layout.addLayout(grid)
         layout.addWidget(self.setup_card)
+        layout.addWidget(self.empty_icon)
         layout.addWidget(self.lbl_empty)
         layout.addStretch(1)
 
@@ -179,14 +181,17 @@ class HomeTab(QWidget):
                 "경로는 '설정'에서 확인할 수 있어요."
             )
             self.lbl_empty.show()
+            self.empty_icon.show()
         elif not mc["total"] and not pc["total"]:
             self.lbl_empty.setText(
                 "대국은 있지만 실수가 없어요. Stockfish 경로를 확인하고 "
                 "'사람전 분석' 또는 '봇전 분석'을 눌러보세요."
             )
             self.lbl_empty.show()
+            self.empty_icon.show()
         else:
             self.lbl_empty.hide()
+            self.empty_icon.hide()
 
     def _set_number(self, card: QWidget, value: str) -> None:
         for child in card.findChildren(QWidget):

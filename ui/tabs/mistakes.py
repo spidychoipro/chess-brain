@@ -68,9 +68,11 @@ class MistakesTab(QWidget):
 
         self.lbl_stats = theme.label("", role="muted")
         self.lbl_stats.setWordWrap(True)
+        self.empty_icon = theme.icon_label("empty", 44)
         self.lbl_empty = theme.label("", role="empty")
         self.lbl_empty.setWordWrap(True)
         self.lbl_empty.hide()
+        self.empty_icon.hide()
         self.btn_analyze_h = QPushButton("사람전 분석")
         self.btn_analyze_b = QPushButton("봇전 분석")
         self.btn_analyze_all = QPushButton("전체 분석")
@@ -177,6 +179,7 @@ class MistakesTab(QWidget):
         layout.addWidget(toolbar)
         layout.addWidget(self.lbl_stats)
         layout.addWidget(self.progress_box)
+        layout.addWidget(self.empty_icon)
         layout.addWidget(self.lbl_empty)
 
         # 노테이션을 모르면 SAN 표가 무의미하니, 행을 고르면 보드가 뜨게 한다.
@@ -277,6 +280,7 @@ class MistakesTab(QWidget):
         rows = self._filter_by_grade(rows)
         self._rows = rows
         self.lbl_empty.setVisible(not rows)
+        self.empty_icon.setVisible(not rows)
         if not rows:
             has_any = bool(db.list_mistakes(limit=1, source=src, only_wrong=only_wrong))
             self.lbl_empty.setText(
