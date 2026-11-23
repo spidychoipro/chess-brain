@@ -57,6 +57,19 @@ try {
     & $py -m PyInstaller --noconfirm --clean chess-brain.spec
     if ($LASTEXITCODE -ne 0) { throw "빌드 실패" }
 
+    # -- 빌드 후: 포터블 Stockfish 를 앱 폴더에 넣는다 ------------------------
+    # PyInstaller 가 dist\chess-brain 을 통째로 지우므로 빌드 뒤에 복사해야 한다.
+    # zip 에 같이 들어가서 새 사용자도 설정 없이 실수 분석을 바로 쓸 수 있다.
+    $engineSrc = "engines\stockfish"
+    if (Test-Path $engineSrc) {
+        $engineDst = Join-Path $out "engines\stockfish"
+        New-Item -ItemType Directory -Force -Path $engineDst | Out-Null
+        Copy-Item (Join-Path $engineSrc "*") $engineDst -Recurse -Force
+        Write-Host "== 포터블 Stockfish 동봉 =="
+    } else {
+        Write-Host "== engines\stockfish 없음 — 내려받으려면 fetch-stockfish.ps1 실행 =="
+    }
+
     # -- 빌드 후: 백업한 설정/DB 복원 (셀프테스트보다 먼저) -------------------
     & $restore
     foreach ($sub in $saved) {

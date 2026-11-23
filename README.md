@@ -3,7 +3,8 @@
 내가 둔 체스 대국에서 **실수만 골라 간격 반복으로 복습**시키는 Windows 데스크톱 앱이다.
 기보를 하나도 몰라도 보드에서 기물을 클릭해서 풀 수 있게 만들었다.
 
-돈 안 들이고 전부 로컬로 돌린다. PGN은 내 폴더, 엔진은 내 컴퓨터의 Stockfish, 기록은 SQLite다.
+돈 안 들이고 전부 로컬로 돌린다. PGN은 내 폴더, 기록은 SQLite다.
+엔진은 공식 Stockfish 최신 안정판(sf_19)을 zip에 같이 넣어서 처음부터 분석이 된다.
 구글드라이브나 rclone은 "편하려면 쓰는" 선택 사항이고, 안 써도 앱은 다 돈다.
 
 많이 푸는 게 목적이 아니다. 잊어버리기 직전에 다시 만나는 게 목표라서 SM-2 변형으로 간격을 정하고,
@@ -30,9 +31,11 @@
 [릴리스 페이지](https://github.com/spidychoipro/chess-brain/releases)에서 최신 zip을 받아
 원하는 폴더에 풀고 `chess-brain.exe`를 더블클릭하면 된다. 설치 과정은 없다.
 
+zip 안에 `engines\stockfish\`가 들어 있어서 엔진을 따로 받거나 경로를 지정할 필요가 없다.
 처음 실행하면 `config/config.json`과 `data/app.db`가 자동으로 만들어진다.
 zip에는 내 설정과 학습 기록이 들어 있지 않으므로, 기존에 쓰던 폴더가 있으면
 `config/`와 `data/`를 새 폴더로 같이 옮겨주면 기록이 그대로 이어진다.
+예전 컴퓨터의 엔진 경로가 설정에 남아 있어도 앱이 번들 엔진을 찾아서 대신 쓴다.
 
 ### 소스로 쓰는 경우
 
@@ -188,7 +191,7 @@ API가 달 단위로 한 번에 주기 때문에 3일치 30판은 1~2번, 5개�
 ## 업데이트 확인
 
 헤더의 **업데이트 확인** 버튼이나 설정의 **업데이트** 카드에서 누르면 된다.
-GitHub의 최근 태그를 한 번 조회해서 현재 버전(`0.2.2`)과 비교한다.
+GitHub의 최근 태그를 한 번 조회해서 현재 버전(`0.2.3`)과 비교한다.
 
 - 새 버전이 있으면 토스트와 함께 "릴리스 페이지 열기"를 알려준다.
 - 최신이면 "현재 버전이 최신이에요"라고 뜬다.
@@ -202,7 +205,7 @@ GitHub의 최근 태그를 한 번 조회해서 현재 버전(`0.2.2`)과 비교
 
 | 쓰는 것 | 비용 | 이유 |
 | --- | --- | --- |
-| Stockfish | 0원 | 내 컴퓨터에서 도는 오픈소스 엔진. 클라우드 분석 API 안 씀 |
+| Stockfish | 0원 | zip에 들어 있는 공식 sf_19 포터블 빌드(GPLv3). 클라우드 분석 API 안 씀 |
 | SQLite / PGN | 0원 | 내 디스크에 저장 |
 | chess.com 수집 | 0원 | 공개 아카이브 API. 키도, 구독도 필요 없다 |
 | rclone / 구글드라이브 | 0원 | 개인 무료 할당량. 읽기 전용이라 쓰기 요금도 없다 |
@@ -228,10 +231,13 @@ LLM이나 유료 추론 API는 아예 안 쓴다. "chess-brain"이지만 두뇌�
 ## 직접 빌드하기
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File .\fetch-stockfish.ps1   # 엔진이 없을 때 한 번
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-- 결과물: `dist\chess-brain\chess-brain.exe`
+- `fetch-stockfish.ps1`은 공식 GitHub 릴리스에서 sf_19 포터블 빌드를 받아 `engines\stockfish\`에 넣는다.
+  exe와 GPLv3 라이선스(`Copying.txt`), 소스(`src\`)가 함께 들어간다.
+- 결과물: `dist\chess-brain\chess-brain.exe` (엔진도 `dist\chess-brain\engines\`에 복사됨)
 - 빌드가 `config/`와 `data/`를 `backups\build-<날짜>\`에 복사해두고 되돌린다. 실패해도 사본은 남는다.
 - 빌드 마지막에 오프스크린 셀프테스트가 한 번 돌아서 드라이브 번들까지 확인한다.
 - 그 위에 앱 시작 시 롤링 백업도 돌아간다. [백업과 복구](#백업과-복구) 참고.
@@ -266,6 +272,8 @@ chess-brain/
 │   └── tabs/         # home / mistakes / training / stats / settings
 ├── main.py
 ├── build.ps1
+├── fetch-stockfish.ps1    # 공식 sf_19 포터블 엔진 받기 (git 제외, 한 번만)
+├── engines\stockfish\     # 번들 엔진 + GPLv3 라이선스 + 소스 (git 제외)
 ├── requirements.txt
 ├── data/             # app.db, data/backups/ 롤링 사본 (git 제외)
 ├── config/           # config.json, token.json (git 제외)
@@ -279,4 +287,4 @@ chess-brain/
 - 보드 방향, 미래 복습 필터, 대안 수 인정, 메이트 구분 같은 학습 규칙의 자세한 내용은
   [학습 개선 문서](docs/learning-upgrade.md)를 참고.
 
-검증: `python -m unittest discover -s tests -v` (현재 51개).
+검증: `python -m unittest discover -s tests -v` (현재 56개).

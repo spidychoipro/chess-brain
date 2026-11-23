@@ -67,7 +67,7 @@ def _fill_missing_replies_with(sf, on_progress: Progress = None, limit: int = 50
 
 def fill_missing_replies(cfg: Dict[str, Any], on_progress: Progress = None) -> int:
     """새로 분석할 게임이 없어도 '실수 분석' 버튼이 응수를 채우게 한다."""
-    sf_path = cfg_mod.get(cfg, "stockfish.path", "")
+    sf_path = engine_mod.resolve_engine_path(cfg_mod.get(cfg, "stockfish.path", ""))
     if not engine_mod.engine_available(sf_path):
         return 0
     depth = max(4, min(16, int(cfg_mod.get(cfg, "stockfish.depth", 12) or 12)))
@@ -506,7 +506,7 @@ def analyze_mistakes(
     끝나지 않고 버튼 한 번에 결과까지 가게 하려는 것.
     """
     db.init_db()
-    sf_path = cfg_mod.get(cfg, "stockfish.path", "")
+    sf_path = engine_mod.resolve_engine_path(cfg_mod.get(cfg, "stockfish.path", ""))
     raw_depth = int(cfg_mod.get(cfg, "stockfish.depth", 12) or 12)
     # depth 27 같은 값이 들어오면 분석이 사실상 안 끝난다. 안전하게 자른다.
     depth = max(4, min(16, raw_depth))
@@ -574,11 +574,16 @@ def analyze_mistakes(
     ) as sf:
         _note(on_progress, f"분석 시작 (depth {depth}, 스레드 {sf.threads})")
         for file_id, games in by_file.items():
-            if file_id.startswith("local:"):
-                with open(file_id[len("local:") :], "r", encoding="utf-8", errors="replace") as f:
-                    text = f.read()
-            else:
-                text = drive.read_text(service, file_id)
+            # PGN 을 옮기거나 드라이브 접근이 끊겨도 나머지 게임 분석은 계속된다.
+            try:
+                if file_id.startswith("local:"):
+                    with open(file_id[len("local:") :], "r", encoding="utf-8", errors="replace") as f:
+                        text = f.read()
+                else:
+                    text = drive.read_text(service, file_id)
+            except Exception as exc:
+                _note(on_progress, f"PGN 읽기 실패, 건너뜀: {os.path.basename(file_id)} ({exc})")
+                continue
 
             wanted = {g["game_id"] for g in games}
             for game in parser.iter_games(text):

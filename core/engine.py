@@ -128,15 +128,10 @@ def find_stockfish(fast: bool = False) -> Optional[str]:
         return which
 
     candidates: List[str] = []
+    # 앱 폴더도 재귀적으로 본다. 번들 엔진은 engines\stockfish\ 안에 있어서
+    # 한 겹만 보면 못 찾는다 (릴리스 zip 이 그 구조로 들어간다).
     for d in _app_dirs():
-        try:
-            names = os.listdir(d)
-        except OSError:
-            continue
-        for fn in names:
-            low = fn.lower()
-            if low.startswith("stockfish") and low.endswith(".exe"):
-                candidates.append(os.path.join(d, fn))
+        candidates += _walk_for_sf(d, max_depth=2)
 
     dirs = _common_dirs()
     # fast 는 한 단계만(=예: Downloads\stockfish\stockfish.exe 같은 한 겹 안쪽까지),
@@ -151,6 +146,35 @@ def find_stockfish(fast: bool = False) -> Optional[str]:
     uniq = sorted(set(candidates))
     uniq.sort(key=lambda p: (_sf_rank(os.path.basename(p)), os.path.basename(p).lower()))
     return uniq[0]
+
+
+def resolve_engine_path(path: str) -> str:
+    """설정 경로가 비었거나 깨졌으면 앱 폴더의 번들/시스템 엔진으로 대체한다.
+
+    릴리스 zip 에는 ``engines\\stockfish\\`` 가 같이 들어간다. 새 사용자는 설정을
+    하나도 안 건드려도 분석이 돌아야 하므로, 저장된 경로가 없거나 예전 컴퓨터를
+    가리키고 있으면 자동 감지로 넘어간다.
+    """
+    if path:
+        p = os.path.expanduser(path)
+        root = None
+        try:
+            from core.utils import project_root
+
+            root = project_root()
+        except Exception:
+            pass
+        if os.path.isabs(p) and os.path.isfile(p):
+            return os.path.abspath(p)
+        # 상대 경로는 cwd 가 아니라 앱 폴더 기준으로 먼저 찾는다. 더블클릭 실행 시
+        # cwd 가 어디든 ( 바로가기 '시작 위치' 등 ) 번들 엔진을 찾을 수 있게.
+        if root is not None:
+            alt = root / p
+            if alt.is_file():
+                return str(alt.resolve())
+        if os.path.isfile(p):
+            return os.path.abspath(p)
+    return find_stockfish(fast=True) or ""
 
 
 def _to_pawns(pov) -> float:
@@ -184,9 +208,10 @@ class Stockfish:
         threads: Optional[int] = None,
         hash_mb: Optional[int] = None,
     ):
-        if not engine_available(path):
-            raise FileNotFoundError(f"stockfish not found: {path}")
-        self.path = path
+        resolved = resolve_engine_path(path) if path else find_stockfish(fast=True) or ""
+        if not engine_available(resolved):
+            raise FileNotFoundError(f"stockfish not found: {path or '(설정 없음)'}")
+        self.path = resolved
         self.depth = depth
         # 0/None 이면 자동. 기본이 1스레드라 분석이 유난히 느렸다.
         self.threads = threads or default_threads()

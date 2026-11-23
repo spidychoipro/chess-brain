@@ -280,8 +280,9 @@ class SettingsTab(QWidget):
 
         self.lbl_sf = collapsible_help(
             "Stockfish 는 '내 실수' 분석에만 쓰인다(없어도 기보 트레이닝은 됨).\n"
-            "'자동 감지' 를 누르면 PATH·앱 옆·흔한 설치 위치에서 stockfish*.exe 를 찾아 채워준다. "
-            "없으면 stockfishchess.org 에서 받아 아무 폴더에 풀고 '찾아보기' 로 지정하면 된다."
+            "zip 에 공식 Stockfish(sf_19)가 들어 있어서 보통은 아무 것도 안 해도 된다. "
+            "'자동 감지' 는 PATH·앱 옆 engines·흔한 설치 위치에서 stockfish*.exe 를 찾는다. "
+            "엔진이 없으면 프로젝트의 fetch-stockfish.ps1 을 한 번 실행하면 된다."
         )
 
         card_sf = theme.card()
