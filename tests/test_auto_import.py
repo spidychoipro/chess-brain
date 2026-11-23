@@ -36,7 +36,7 @@ class AutoImportTests(unittest.TestCase):
 
     def cfg(self, folder):
         return {
-            'chesscom': {'username': '', 'fallback_color': 'white'},
+            'chesscom': {'username': '', 'fallback_color': 'white', 'auto_fetch': False},
             'local': {'pgn_folder': str(folder)},
             'rclone': {'binary': '', 'config': '', 'remote': '', 'mount_point': ''},
             'stockfish': {'path': '', 'depth': 12},

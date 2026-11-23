@@ -7,6 +7,7 @@ import os
 from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -43,6 +44,15 @@ class SettingsTab(QWidget):
 
         self.in_username = QLineEdit()
         self.in_username.setPlaceholderText("chess.com 아이디 (내가 둔 수 판별용)")
+
+        self.chk_auto_fetch = QCheckBox("앱을 켤 때 chess.com에서 새 대국 받아오기")
+        self.in_fetch_script = QLineEdit()
+        self.in_fetch_script.setPlaceholderText(
+            "수집 도구 chess_pgn_sync.py 경로 (비우면 자동 탐색)"
+        )
+        self.btn_fetch_now = QPushButton("지금 chess.com에서 받기")
+        self.btn_fetch_now.setProperty("variant", "ghost")
+        self.btn_fetch_now.clicked.connect(self._fetch_now)
 
         self.in_parent = QLineEdit()
         self.in_parent.setPlaceholderText("구글드라이브 부모 폴더 ID 또는 공유 URL")
@@ -140,6 +150,27 @@ class SettingsTab(QWidget):
         cl.addWidget(self.lbl_local)
         cl.addLayout(local_row)
         cl.addLayout(local_actions)
+
+        card_chesscom = theme.card()
+        cch = QVBoxLayout(card_chesscom)
+        cch.setContentsMargins(18, 16, 18, 16)
+        cch.setSpacing(10)
+        cch.addWidget(theme.label("chess.com 자동 수집", role="h2"))
+        cch.addWidget(
+            theme.label(
+                "오프라인인 사이 쌓인 대국을 켤 때 한 번에 받아와요. "
+                "사람 게임은 공개 API, 봇 게임은 아카이브에서 가져옵니다. "
+                "3일치 30판이든 5개월치 300판이든 똑같이 처리돼요. "
+                "이미 받은 게임은 다시 받지 않습니다.",
+                role="muted",
+            )
+        )
+        cch.addWidget(self.chk_auto_fetch)
+        cch.addWidget(self.in_fetch_script)
+        fetch_actions = QHBoxLayout()
+        fetch_actions.addWidget(self.btn_fetch_now)
+        fetch_actions.addStretch(1)
+        cch.addLayout(fetch_actions)
 
         # -- rclone (구글 인증은 rclone 이 담당 = 앱은 설정 필요 없음) ---------
         self.in_rclone_remote = QLineEdit()
@@ -330,6 +361,7 @@ class SettingsTab(QWidget):
         layout.setContentsMargins(0, 0, 8, 0)
         layout.setSpacing(14)
         layout.addWidget(card_local)
+        layout.addWidget(card_chesscom)
         layout.addWidget(card_rclone)
         layout.addWidget(card_drive)
         layout.addWidget(card_sf)
@@ -388,6 +420,8 @@ class SettingsTab(QWidget):
     def _load_into_widgets(self) -> None:
         c = self.cfg
         self.in_username.setText(cfg_mod.get(c, "chesscom.username", "") or "")
+        self.chk_auto_fetch.setChecked(bool(cfg_mod.get(c, "chesscom.auto_fetch", True)))
+        self.in_fetch_script.setText(cfg_mod.get(c, "chesscom.sync_script", "") or "")
         self.in_parent.setText(cfg_mod.get(c, "google_drive.parent_folder_id", "") or "")
         self.in_api_key.setText(cfg_mod.get(c, "google_drive.api_key", "") or "")
         name = cfg_mod.get(c, "google_drive.parent_folder_name", "") or ""
@@ -412,6 +446,8 @@ class SettingsTab(QWidget):
     def _collect(self) -> None:
         self.cfg = cfg_mod.load_config()
         cfg_mod.set_(self.cfg, "chesscom.username", self.in_username.text().strip())
+        cfg_mod.set_(self.cfg, "chesscom.auto_fetch", self.chk_auto_fetch.isChecked())
+        cfg_mod.set_(self.cfg, "chesscom.sync_script", self.in_fetch_script.text().strip())
         cfg_mod.set_(self.cfg, "google_drive.parent_folder_id", self.in_parent.text().strip())
         cfg_mod.set_(self.cfg, "google_drive.api_key", self.in_api_key.text().strip())
         cfg_mod.set_(self.cfg, "local.pgn_folder", self.in_local.text().strip())
@@ -477,9 +513,12 @@ class SettingsTab(QWidget):
             tail = f" · 내려받음 {result['downloaded']}" if "downloaded" in result else ""
             return f"게임 {result.get('games', 0)} · 새 문제 {result.get('problems', 0)}{tail}"
         if "files" in result:
+            fetched = int(result.get("fetched", 0) or 0)
+            head = f"chess.com {fetched}개 받음 · " if fetched else ""
             return (
-                f"파일 {result.get('files', 0)} · 새 게임 {result.get('new_games', 0)}"
-                f" · 문제 {result.get('problems', 0)}"
+                head
+                + f"파일 {result.get('files', 0)} · 새 게임 {result.get('new_games', 0)}"
+                + f" · 문제 {result.get('problems', 0)}"
             )
         return str(result)
 
@@ -704,6 +743,19 @@ class SettingsTab(QWidget):
         folder = backup_mod.backup_dir()
         folder.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def _fetch_now(self) -> None:
+        """chess.com 에서 새 대국을 받고 바로 로컬 PGN 까지 읽는다."""
+        from core import pipeline as pipeline_mod
+
+        self._collect()
+        self._run(
+            self.btn_fetch_now,
+            pipeline_mod.auto_catch_up,
+            "chess.com에서 받는 중…",
+            cfg=self.cfg,
+            fetch_all=True,
+        )
 
     def _open_local(self) -> None:
         self._collect()
