@@ -36,6 +36,19 @@ Write-Host "== PyInstaller 설치 =="
 & $py -m pip install --upgrade pyinstaller
 if ($LASTEXITCODE -ne 0) { throw "pyinstaller 설치 실패" }
 
+# 빌드가 실패해도 백업은 지우기 전에 반드시 되돌린다. (실패 시 finally에서 재사용)
+$restored = $false
+$restore = {
+    foreach ($sub in @("config", "data")) {
+        $bk = Join-Path $keep $sub
+        if (Test-Path $bk) {
+            $dst = Join-Path $out $sub
+            New-Item -ItemType Directory -Force -Path $dst | Out-Null
+            Copy-Item (Join-Path $bk "*") $dst -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 try {
     Write-Host "== 빌드 =="
     # 주의: unittest 는 절대 제외하지 말 것.
@@ -45,14 +58,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "빌드 실패" }
 
     # -- 빌드 후: 백업한 설정/DB 복원 (셀프테스트보다 먼저) -------------------
-    foreach ($sub in @("config", "data")) {
-        $bk = Join-Path $keep $sub
-        if (Test-Path $bk) {
-            $dst = Join-Path $out $sub
-            New-Item -ItemType Directory -Force -Path $dst | Out-Null
-            Copy-Item (Join-Path $bk "*") $dst -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
+    & $restore
+    $restored = $true
     if ($saved.Count -gt 0) {
         Write-Host "== 설정/DB 복원 완료 =="
     }
@@ -86,6 +93,12 @@ try {
     }
 }
 finally {
+    if (-not $restored) {
+        & $restore
+        if ($saved.Count -gt 0) {
+            Write-Host "== 빌드 실패 — 설정/DB 복구함 =="
+        }
+    }
     Remove-Item $keep -Recurse -Force -ErrorAction SilentlyContinue
 }
 
