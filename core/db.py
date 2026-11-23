@@ -127,6 +127,9 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
+    from core import backup as backup_mod
+
+    backup_mod.rotate()  # 스키마를 건드리기 전에 현재 상태부터 보관한다.
     conn = connect()
     try:
         conn.executescript(SCHEMA)

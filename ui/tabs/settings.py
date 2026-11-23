@@ -298,6 +298,23 @@ class SettingsTab(QWidget):
         update_actions.addStretch(1)
         cu.addLayout(update_actions)
 
+        card_backup = theme.card()
+        cback = QVBoxLayout(card_backup)
+        cback.setContentsMargins(18, 16, 18, 16)
+        cback.setSpacing(10)
+        cback.addWidget(theme.label("백업", role="h2"))
+        cback.addWidget(
+            theme.label(
+                "앱을 켤 때마다 설정과 학습 DB를 최근 5개까지 따로 저장해요. "
+                "빌드 백업은 프로젝트의 backups 폴더에도 남아요.",
+                role="muted",
+            )
+        )
+        self.btn_backup_folder = QPushButton("백업 폴더 열기")
+        self.btn_backup_folder.setProperty("variant", "ghost")
+        self.btn_backup_folder.clicked.connect(self._open_backup)
+        cback.addWidget(self.btn_backup_folder)
+
         self.btn_save = QPushButton("설정 저장")
         self.btn_save.setProperty("variant", "primary")
         self.btn_save.clicked.connect(self._save)
@@ -318,6 +335,7 @@ class SettingsTab(QWidget):
         layout.addWidget(card_sf)
         layout.addWidget(card_defaults)
         layout.addWidget(card_update)
+        layout.addWidget(card_backup)
         layout.addWidget(self.btn_save)
         layout.addWidget(theme.label("로그", role="caption"))
         layout.addWidget(self.log, 1)
@@ -679,6 +697,13 @@ class SettingsTab(QWidget):
         if path:
             self.in_local.setText(path)
             self._save()
+
+    def _open_backup(self) -> None:
+        from core import backup as backup_mod
+
+        folder = backup_mod.backup_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
     def _open_local(self) -> None:
         self._collect()

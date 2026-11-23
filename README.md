@@ -18,6 +18,7 @@
 - [복습 규칙](#복습-규칙)
 - [PGN 가져오기](#pgn-가져오기)
 - [업데이트 확인](#업데이트-확인)
+- [백업과 복구](#백업과-복구)
 - [직접 빌드하기](#직접-빌드하기)
 - [구조](#구조)
 
@@ -178,6 +179,15 @@ GitHub의 최근 태그를 한 번 조회해서 현재 버전(`0.2.0`)과 비교
 
 업데이트를 누를 때만 인터넷을 쓰고, 평소 학습·분석은 전부 오프라인으로 된다.
 
+## 백업과 복구
+
+설정과 학습 기록은 두 군데에서 따로 보관한다.
+
+- 앱을 켤 때마다 `data\backups\`에 `app-<날짜>.db`와 `config-<날짜>.json`을 남긴다. 최근 5개만 유지한다.
+- 빌드할 때는 프로젝트의 `backups\build-<날짜>\`에 `config\`와 `data\` 통째로 복사한다. 빌드가 실패해도 사본은 지우지 않는다. 최근 5개 빌드만 남긴다.
+
+설정의 **백업 폴더 열기** 버튼으로 첫 번째 폴더를 바로 열 수 있다. 뭔가 잘못됐으면 거기서 가장 최신 파일을 `data\app.db`나 `config\config.json` 자리에 복사하면 된다. 빌드 사본은 `backups\build-<날짜>\config\`, `backups\build-<날짜>\data\`를 각각 원래 자리로 복사하면 된다.
+
 ## 직접 빌드하기
 
 ```powershell
@@ -185,8 +195,9 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
 - 결과물: `dist\chess-brain\chess-brain.exe`
-- 빌드가 `config/`와 `data/`를 백업했다가 되돌리므로 설정과 학습 기록은 안 날아간다.
+- 빌드가 `config/`와 `data/`를 `backups\build-<날짜>\`에 복사해두고 되돌린다. 실패해도 사본은 남는다.
 - 빌드 마지막에 오프스크린 셀프테스트가 한 번 돌아서 드라이브 번들까지 확인한다.
+- 그 위에 앱 시작 시 롤링 백업도 돌아간다. [백업과 복구](#백업과-복구) 참고.
 
 ## 구조
 
@@ -194,6 +205,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 chess-brain/
 ├── core/
 │   ├── config.py     # config.json 로드/저장
+│   ├── backup.py     # 시작 시 설정/DB 롤링 백업
 │   ├── db.py         # sqlite 스키마 + mistakes/problems/games, 등급/응수 마이그레이션
 │   ├── sr.py         # 간격 반복 (ease/interval/due_at)
 │   ├── drive.py      # 구글드라이브 읽기전용 + Bot/Human 분류
@@ -217,8 +229,9 @@ chess-brain/
 ├── main.py
 ├── build.ps1
 ├── requirements.txt
-├── data/             # app.db (git 제외)
-└── config/           # config.json, token.json (git 제외)
+├── data/             # app.db, data/backups/ 롤링 사본 (git 제외)
+├── config/           # config.json, token.json (git 제외)
+└── backups/          # build-<날짜>/ 설정·DB 전체 사본 (git 제외)
 ```
 
 ## 메모
