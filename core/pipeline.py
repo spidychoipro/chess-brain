@@ -5,6 +5,7 @@ plain script (handy for testing without launching Qt).
 """
 from __future__ import annotations
 
+import io
 import os
 from typing import Any, Callable, Dict, List, Optional
 
@@ -89,42 +90,74 @@ def ingest_pgn_text(
     """Parse one PGN blob and store its user lines as line problems."""
     db.init_db()
     username, fallback = _user_settings(cfg)
-    stats = {"games": 0, "new_games": 0, "lines": 0, "problems": 0}
+    stats = {"games": 0, "new_games": 0, "lines": 0, "problems": 0,
+             "skipped": 0, "errors": 0}
 
-    for game in parser.iter_games(pgn_text):
-        stats["games"] += 1
-        gid = parser.game_id(game)
-        # Validate ownership before marking a game processed.
-        parser.user_color(game, username, fallback)
-        if gid != parser.legacy_game_id(game):
-            existing_lines = parser.extract_user_lines(game, source, username, fallback)
-            db.migrate_game_identity(parser.legacy_game_id(game), gid,
-                {(ln.fen_before, ln.san, ln.ply) for ln in existing_lines})
-        db.upsert_game(gid, source, file_id, modified_time)
-        if db.is_game_processed(gid):
+    # 한 게임이 깨졌다고 파일 전체(그리고 뒤의 모든 파일)가 멈추면 안 된다.
+    # 게임마다 에러를 격리해서 건너뛰고 나머지는 계속 읽는다.
+    stream = io.StringIO(pgn_text)
+    while True:
+        try:
+            game = chess.pgn.read_game(stream)
+        except Exception as exc:
+            stats["errors"] += 1
+            _note(on_progress, f"PGN 읽기 오류: {exc}")
+            break
+        if game is None:
+            break
+        if game.errors:
+            stats["errors"] += 1
+            _note(on_progress, f"잘못된 PGN 건너뜀: {game.errors[0]}")
             continue
-        stats["new_games"] += 1
-        lines = parser.extract_user_lines(
-            game,
-            source=source,
-            username=username,
-            fallback_color=fallback,
-            min_ply=2,
-        )
-        for ln in lines:
-            stats["lines"] += 1
-            pid = db.add_problem(
-                fen=ln.fen_before,
-                context_sans=ln.context_sans,
-                target_san=ln.san,
-                source_game_id=gid,
+        stats["games"] += 1
+        try:
+            gid = parser.game_id(game)
+            # Validate ownership before marking a game processed.
+            parser.user_color(game, username, fallback)
+            if gid != parser.legacy_game_id(game):
+                existing_lines = parser.extract_user_lines(game, source, username, fallback)
+                db.migrate_game_identity(
+                    parser.legacy_game_id(game), gid,
+                    {(ln.fen_before, ln.san, ln.ply) for ln in existing_lines},
+                )
+            db.upsert_game(gid, source, file_id, modified_time)
+            if db.is_game_processed(gid):
+                continue
+            stats["new_games"] += 1
+            lines = parser.extract_user_lines(
+                game,
                 source=source,
-                ply=ln.ply,
-                origin="line",
+                username=username,
+                fallback_color=fallback,
+                min_ply=2,
             )
-            if pid:
-                stats["problems"] += 1
-        db.mark_game_processed(gid)
+            made = 0
+            for ln in lines:
+                stats["lines"] += 1
+                made += 1
+                pid = db.add_problem(
+                    fen=ln.fen_before,
+                    context_sans=ln.context_sans,
+                    target_san=ln.san,
+                    source_game_id=gid,
+                    source=source,
+                    ply=ln.ply,
+                    origin="line",
+                )
+                if pid:
+                    stats["problems"] += 1
+            if made == 0:
+                # 아이디/색이 안 맞거나 PGN이 잘리면 내 수가 0개가 된다. 여기서
+                # processed를 찍어버리면 설정을 고쳐도 영구히 다시 읽지 않는다.
+                stats["skipped"] += 1
+                _note(on_progress, f"내 수가 없어 보류: {gid} (아이디/색 확인 필요)")
+            else:
+                db.mark_game_processed(gid)
+        except Exception as exc:
+            # 예: 설정한 아이디가 없는 다른 계정의 게임. 그 게임만 건너뛴다.
+            stats["errors"] += 1
+            _note(on_progress, f"게임 건너뜀: {exc}")
+            continue
     return stats
 
 
@@ -176,7 +209,8 @@ def sync_local_folder(
                 pgn_files.append(os.path.join(dirpath, name))
     pgn_files.sort()
 
-    empty = {"files": 0, "games": 0, "new_games": 0, "lines": 0, "problems": 0}
+    empty = {"files": 0, "games": 0, "new_games": 0, "lines": 0, "problems": 0,
+             "skipped": 0, "errors": 0}
     if not pgn_files:
         _note(on_progress, "찾은 .pgn 파일이 없습니다.")
         return empty
@@ -193,15 +227,20 @@ def sync_local_folder(
             or drive.classify_source(parts)
             or "human"
         )
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            text = f.read()
-        stats = ingest_pgn_text(
-            text,
-            src,
-            cfg,
-            file_id="local:" + os.path.abspath(path),
-            modified_time=str(int(os.path.getmtime(path))),
-        )
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+            stats = ingest_pgn_text(
+                text,
+                src,
+                cfg,
+                file_id="local:" + os.path.abspath(path),
+                modified_time=str(int(os.path.getmtime(path))),
+            )
+        except Exception as exc:
+            total["errors"] += 1
+            _note(on_progress, f"파일 건너뜀 {os.path.basename(path)}: {exc}")
+            continue
         for k in total:
             total[k] += stats.get(k, 0)
         total["files"] += 1
@@ -222,7 +261,8 @@ def sync_drive(cfg: Dict[str, Any], on_progress: Progress = None) -> Dict[str, i
     files = drive.list_pgn_files(service, parent_id)
     _note(on_progress, f"{len(files)}개 PGN 발견")
 
-    total = {"files": len(files), "games": 0, "new_games": 0, "lines": 0, "problems": 0}
+    total = {"files": len(files), "games": 0, "new_games": 0, "lines": 0, "problems": 0,
+             "skipped": 0, "errors": 0}
     for i, f in enumerate(files, 1):
         source = f.source or "human"
         if f.source is None:
@@ -236,8 +276,8 @@ def sync_drive(cfg: Dict[str, Any], on_progress: Progress = None) -> Dict[str, i
             file_id=f.file_id,
             modified_time=f.modified_time,
         )
-        for k in ("games", "new_games", "lines", "problems"):
-            total[k] += s[k]
+        for k in ("games", "new_games", "lines", "problems", "skipped", "errors"):
+            total[k] += s.get(k, 0)
     _note(on_progress, f"완료: 새 게임 {total['new_games']} / 문제 {total['problems']}")
     return total
 
@@ -323,6 +363,74 @@ def pull_rclone_to_local(cfg: Dict[str, Any], on_progress: Progress = None) -> D
 
     _note(on_progress, "rclone 완료 → 로컬 동기화 시작")
     return sync_local_folder(cfg, on_progress)
+
+
+def auto_catch_up(cfg: Dict[str, Any], on_progress: Progress = None) -> Dict[str, Any]:
+    """앱을 켜지 않은 사이 쌓인 대국을 자동으로 따라잡는다.
+
+    순서: 마운트 경로가 죽었으면 다시 붙이고 → rclone 으로 드라이브의 새 PGN을
+    로컬 폴더에 받고 → 로컬 폴더를 스캔한다. 드라이브 접근이 실패해도 로컬 파일
+    스캔은 그대로 진행해서 오프라인 학습이 막히지 않게 한다. 예외를 던지지 않고
+    ``warnings`` 에 담아 UI가 그대로 보여줄 수 있게 한다.
+    """
+    from core import rclone as rclone_mod
+
+    db.init_db()
+    root = (cfg_mod.get(cfg, "local.pgn_folder", "") or "").strip()
+    result: Dict[str, Any] = {
+        "files": 0, "games": 0, "new_games": 0, "problems": 0, "skipped": 0,
+        "errors": 0, "pulled": False, "mounted": False, "warnings": [],
+    }
+    if not root:
+        result["warnings"].append("로컬 PGN 폴더가 지정되지 않아 자동 가져오기를 건너뛰었어요.")
+        return result
+
+    exe = rclone_mod.find_binary(cfg)
+    remote = rclone_mod.get_remote(cfg)
+    mount_point = rclone_mod.normalize_mount_point(rclone_mod.get_mount_point(cfg))
+    is_mount_path = bool(mount_point) and (
+        os.path.normcase(os.path.abspath(root))
+        == os.path.normcase(os.path.abspath(mount_point))
+    )
+    if remote and exe and is_mount_path and not os.path.isdir(root):
+        try:
+            mount_drive(cfg, on_progress)
+            result["mounted"] = True
+        except Exception as exc:
+            result["warnings"].append(f"드라이브 다시 붙이기 실패: {exc}")
+
+    if not os.path.isdir(root):
+        result["warnings"].append(f"로컬 PGN 폴더를 찾을 수 없어요: {root}")
+        return result
+
+    if remote and exe and not is_mount_path:
+        try:
+            _note(on_progress, f"드라이브에서 새 대국 확인: {remote}")
+            code = rclone_mod.run_copy(
+                exe, remote, root, config=rclone_mod.get_config(cfg),
+                on_line=lambda m: _note(on_progress, m),
+            )
+            if code == 0:
+                result["pulled"] = True
+            else:
+                result["warnings"].append(
+                    f"드라이브에서 받기 실패(code {code}). 로컬 파일로 계속합니다."
+                )
+        except Exception as exc:
+            result["warnings"].append(f"드라이브 확인 실패: {exc}. 로컬 파일로 계속합니다.")
+
+    try:
+        stats = sync_local_folder(cfg, on_progress)
+    except Exception as exc:
+        result["warnings"].append(f"로컬 동기화 실패: {exc}")
+        return result
+    for key in ("files", "games", "new_games", "problems", "skipped", "errors"):
+        result[key] = stats.get(key, 0)
+    if result["errors"]:
+        result["warnings"].append(
+            f"읽지 못한 게임 {result['errors']}개가 있어요. 로그에서 이유를 확인하세요."
+        )
+    return result
 
 
 def mount_drive(cfg: Dict[str, Any], on_progress: Progress = None) -> Dict[str, Any]:

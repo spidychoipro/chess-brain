@@ -92,6 +92,8 @@ class MainWindow(QMainWindow):
         brand = QLabel("chess-brain")
         brand.setObjectName("Brand")
         self.lbl_sub = theme.label("", role="small")
+        self.lbl_sync = theme.label("대국 확인 중…", role="small")
+        self.lbl_sync.setWordWrap(True)
         self.btn_update = QPushButton("업데이트 확인")
         self.btn_update.setProperty("variant", "ghost")
         self.btn_update.clicked.connect(self._check_updates)
@@ -102,6 +104,7 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(brand)
         header_layout.addSpacing(12)
         header_layout.addWidget(self.lbl_sub, 1)
+        header_layout.addWidget(self.lbl_sync)
         header_layout.addWidget(self.btn_update)
         header_layout.addWidget(self.btn_refresh)
 
@@ -122,6 +125,15 @@ class MainWindow(QMainWindow):
         home.openImport.connect(self._goto_import)
         home.openSetup.connect(self._goto_setup)
         home.analyze.connect(self._goto_analyze)
+
+        # 앱을 켜지 않은 사이 쌓인 대국을 자동으로 따라잡는다. 켜져 있는 동안에도
+        # 10분마다 한 번씩 확인해서 드라이브에 새 대국이 들어오면 바로 읽는다.
+        self._auto_worker = None
+        QTimer.singleShot(700, self._auto_catch_up)
+        self._sync_timer = QTimer(self)
+        self._sync_timer.setInterval(10 * 60 * 1000)
+        self._sync_timer.timeout.connect(self._auto_catch_up)
+        self._sync_timer.start()
 
     # -- pages (lazy) -------------------------------------------------------
 
@@ -235,6 +247,36 @@ class MainWindow(QMainWindow):
             if hasattr(page, "refresh"):
                 page.refresh()
         self._update_sub()
+
+    # -- automatic import ---------------------------------------------------
+
+    def _auto_catch_up(self) -> None:
+        from core import config as cfg_mod
+        from core import pipeline
+        from ui.worker import PipelineWorker
+
+        if self._auto_worker is not None and self._auto_worker.isRunning():
+            return
+        self.lbl_sync.setText("새 대국 확인 중…")
+        worker = PipelineWorker(pipeline.auto_catch_up, cfg=cfg_mod.load_config())
+        self._auto_worker = worker
+        worker.done.connect(self._on_auto_caught_up)
+        worker.failed.connect(
+            lambda msg: self.lbl_sync.setText(f"대국 확인 실패: {msg}")
+        )
+        worker.start()
+
+    def _on_auto_caught_up(self, result: dict) -> None:
+        new = int(result.get("new_games", 0) or 0)
+        if new:
+            self.lbl_sync.setText(f"새 대국 {new}개 가져옴")
+            self.show_toast(f"방치한 사이 대국 {new}개를 가져왔어요.")
+        else:
+            self.lbl_sync.setText("새 대국 없음 · 최신 상태")
+        warnings = result.get("warnings") or []
+        if warnings:
+            self.lbl_sync.setText(self.lbl_sync.text() + " · " + str(warnings[0]))
+        self._refresh_all()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt name
         running = [getattr(page, "_worker", None) for page in self._pages.values()]
