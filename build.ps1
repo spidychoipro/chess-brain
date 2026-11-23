@@ -4,8 +4,8 @@
 #
 # 주의: PyInstaller --noconfirm 은 출력 폴더(dist\chess-brain)를 통째로 지운다.
 #   그 안에 사용자 설정(config\config.json, token.json ...)과 학습 DB(data\app.db)가
-#   같이 들어 있어서, 그냥 빌드하면 설정과 복습 기록이 매번 날아간다.
-#   그래서 빌드 전에 백업했다가 빌드 후 되돌린다.
+#   같이 들어 있다. 빌드 전에 backups\build-<시각> 으로 복사해두고, 성공하든
+#   실패하든 그 사본을 남기고 되돌린다. 임시폴더는 쓰지 않는다(청소되면 끝).
 $ErrorActionPreference = "Stop"
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
@@ -15,11 +15,12 @@ if (-not (Test-Path $py)) { $py = "python" }
 Push-Location (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
 $out = "dist\chess-brain"
-$keep = Join-Path $env:TEMP "chess-brain-keep"
-
-# -- 빌드 전: 사용자 설정/DB 백업 -------------------------------------------
-if (Test-Path $keep) { Remove-Item $keep -Recurse -Force }
+$backupRoot = Join-Path (Get-Location).Path "backups"
+New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
+$keep = Join-Path $backupRoot ("build-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 New-Item -ItemType Directory -Force -Path $keep | Out-Null
+
+# -- 빌드 전: 사용자 설정/DB 를 영구 백업 ------------------------------------
 $saved = @()
 foreach ($sub in @("config", "data")) {
     $src = Join-Path $out $sub
@@ -29,15 +30,13 @@ foreach ($sub in @("config", "data")) {
     }
 }
 if ($saved.Count -gt 0) {
-    Write-Host "== 기존 설정/DB 백업: $($saved -join ', ') =="
+    Write-Host "== 설정/DB 백업: $keep =="
 }
 
 Write-Host "== PyInstaller 설치 =="
 & $py -m pip install --upgrade pyinstaller
 if ($LASTEXITCODE -ne 0) { throw "pyinstaller 설치 실패" }
 
-# 빌드가 실패해도 백업은 지우기 전에 반드시 되돌린다. (실패 시 finally에서 재사용)
-$restored = $false
 $restore = {
     foreach ($sub in @("config", "data")) {
         $bk = Join-Path $keep $sub
@@ -49,6 +48,7 @@ $restore = {
     }
 }
 
+$verified = $false
 try {
     Write-Host "== 빌드 =="
     # 주의: unittest 는 절대 제외하지 말 것.
@@ -59,7 +59,11 @@ try {
 
     # -- 빌드 후: 백업한 설정/DB 복원 (셀프테스트보다 먼저) -------------------
     & $restore
-    $restored = $true
+    foreach ($sub in $saved) {
+        if (-not (Test-Path (Join-Path $out $sub))) {
+            throw "복원 확인 실패: $sub"
+        }
+    }
     if ($saved.Count -gt 0) {
         Write-Host "== 설정/DB 복원 완료 =="
     }
@@ -91,15 +95,22 @@ try {
     } else {
         throw "$exe 가 생성되지 않음"
     }
+    $verified = $true
 }
 finally {
-    if (-not $restored) {
+    # 빌드 실패든 셀프테스트 실패든 상관없이 마지막에 한 번 더 되돌린다.
+    # 백업 폴더는 지우지 않는다. 사고 나면 여기서 꺼내 쓰면 된다.
+    if (-not $verified) {
         & $restore
         if ($saved.Count -gt 0) {
-            Write-Host "== 빌드 실패 — 설정/DB 복구함 =="
+            Write-Host "== 실패 — 백업에서 복구함: $keep =="
         }
     }
-    Remove-Item $keep -Recurse -Force -ErrorAction SilentlyContinue
+    # 최근 5개 빌드 백업만 남긴다.
+    Get-ChildItem $backupRoot -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending |
+        Select-Object -Skip 5 |
+        ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 Pop-Location
