@@ -53,6 +53,9 @@ class SettingsTab(QWidget):
         self.btn_fetch_now = QPushButton("지금 chess.com에서 받기")
         self.btn_fetch_now.setProperty("variant", "ghost")
         self.btn_fetch_now.clicked.connect(self._fetch_now)
+        self.btn_fetch_log = QPushButton("수집 로그 열기")
+        self.btn_fetch_log.setProperty("variant", "ghost")
+        self.btn_fetch_log.clicked.connect(self._open_fetch_log)
 
         self.in_parent = QLineEdit()
         self.in_parent.setPlaceholderText("구글드라이브 부모 폴더 ID 또는 공유 URL")
@@ -169,6 +172,7 @@ class SettingsTab(QWidget):
         cch.addWidget(self.in_fetch_script)
         fetch_actions = QHBoxLayout()
         fetch_actions.addWidget(self.btn_fetch_now)
+        fetch_actions.addWidget(self.btn_fetch_log)
         fetch_actions.addStretch(1)
         cch.addLayout(fetch_actions)
 
@@ -756,6 +760,15 @@ class SettingsTab(QWidget):
             cfg=self.cfg,
             fetch_all=True,
         )
+
+    def _open_fetch_log(self) -> None:
+        from core import chesscom as chesscom_mod
+
+        path = chesscom_mod.log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.touch()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _open_local(self) -> None:
         self._collect()

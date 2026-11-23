@@ -21,6 +21,7 @@ DEFAULTS: Dict[str, Any] = {
         "sync_script": "",
         "python": "",            # 비우면 도구 옆 python.cmd 에 적힌 파이썬 사용
         "fetch_timeout": 900,    # 초. 5개월치 300판 따라잡기처럼 오래 걸릴 수 있다.
+        "skip_drive_list": True,  # 드라이브 목록 대신 로컬 파일+processed로 중복 판단(빠름)
     },
     "google_drive": {
         "parent_folder_id": "",
