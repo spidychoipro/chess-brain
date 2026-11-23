@@ -200,8 +200,8 @@ class MasteryBar(QWidget):
         self.lbl.setWordWrap(True)
         self.bar = QProgressBar()
         self.bar.setRange(0, max(1, rec.goal))
-        self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(8)
+        self.bar.setFormat("%v / %m")
+        self.bar.setFixedHeight(18)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(4)
@@ -1173,7 +1173,7 @@ _STAGES = [
 class NotationDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("노테이션 배우기")
+        self.setWindowTitle("기보 읽기 배우기")
         # 레이아웃 최소 크기가 화면보다 클 수 있어서, 창이 줄어들 수 있게 바닥을 낮춘다.
         # (넘치는 단계 내용은 아래 스크롤 영역이 처리)
         self.setMinimumSize(620, 420)
@@ -1211,7 +1211,7 @@ class NotationDialog(QDialog):
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 18, 20, 18)
         root.setSpacing(12)
-        root.addWidget(theme.label("노테이션 배우기", role="h1"))
+        root.addWidget(theme.label("기보 읽기 배우기", role="h1"))
         root.addWidget(intro)
         root.addLayout(nav)
         # 단계 내용이 세로로 길어 창이 화면 밖으로 나갈 수 있으므로 스크롤로 감싼다.

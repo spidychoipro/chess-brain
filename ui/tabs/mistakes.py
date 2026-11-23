@@ -362,11 +362,9 @@ class MistakesTab(QWidget):
         for item in items:
             item["practice"] = item["id"] in self._previewed
         if not items:
-            QMessageBox.information(
-                self,
-                "내 실수 복습",
+            self.lbl_stats.setText(
                 "복습할 실수가 없어요. 홈의 '대국 가져오기'로 PGN을 읽고 "
-                "'사람전 분석'을 눌러보세요.",
+                "'사람전 분석'을 눌러보세요."
             )
             return
         cfg = self._cfg()
@@ -389,11 +387,8 @@ class MistakesTab(QWidget):
         selected = None if source == "both" else source
         cfg = self._cfg()
         if not engine_mod.engine_available(cfg_mod.get(cfg, "stockfish.path", "")):
-            QMessageBox.warning(
-                self,
-                "실수 분석",
-                "설정에서 stockfish.exe 경로를 먼저 지정하세요.\n"
-                "경로가 없으면 실수 분석은 꺼져 있어요.",
+            self.lbl_stats.setText(
+                "설정에서 stockfish.exe 경로를 먼저 지정하세요. 경로가 없으면 실수 분석은 꺼져 있어요."
             )
             return
         if self._worker is not None and self._worker.isRunning():
