@@ -79,13 +79,12 @@ class HomeTab(QWidget):
         self.card_today = _stat_card("-", "오늘 푼 항목")
 
         grid = QGridLayout()
-        grid.setSpacing(14)
-        grid.addWidget(self.card_due_m, 0, 0)
-        grid.addWidget(self.card_due_p, 0, 1)
-        grid.addWidget(self.card_new, 1, 0)
-        grid.addWidget(self.card_today, 1, 1)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
+        grid.setSpacing(16)
+        for column, card in enumerate(
+            (self.card_due_m, self.card_due_p, self.card_new, self.card_today)
+        ):
+            grid.addWidget(card, 0, column)
+            grid.setColumnStretch(column, 1)
 
         # 첫 실행 때만 보이는 안내. 설정이 채워지면 저절로 사라진다.
         self.setup_card = theme.card()
@@ -116,8 +115,8 @@ class HomeTab(QWidget):
         self.lbl_empty.setWordWrap(True)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(14)
+        layout.setContentsMargins(32, 24, 32, 24)
+        layout.setSpacing(20)
         layout.addWidget(theme.label("홈", role="h1"))
         layout.addWidget(self.lbl_now)
         layout.addLayout(actions)

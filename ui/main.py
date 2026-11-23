@@ -4,12 +4,14 @@ Home is the entry point: it shows today's work and the actions that lead to it.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QPropertyAnimation, QTimer
 
 from PySide6.QtWidgets import (
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QPushButton,
     QStackedWidget,
@@ -21,12 +23,20 @@ from core import db
 from ui import theme
 
 PAGES = [
-    ("♜  홈", "home"),
-    ("♟  내 실수", "mistakes"),
-    ("♞  기보 트레이닝", "training"),
-    ("♝  기록/통계", "stats"),
-    ("⚙  설정", "settings"),
+    ("홈", "home"),
+    ("내 실수", "mistakes"),
+    ("기보 트레이닝", "training"),
+    ("기록/통계", "stats"),
+    ("설정", "settings"),
 ]
+
+ICON_KEYS = {
+    "home": "home",
+    "mistakes": "mistakes",
+    "training": "training",
+    "stats": "stats",
+    "settings": "settings",
+}
 
 # 탭 클래스는 첫 방문 때 만들어서 시작 부하를 줄인다.
 def _tab_classes():
@@ -64,8 +74,8 @@ class MainWindow(QMainWindow):
         self.nav = QListWidget()
         self.nav.setObjectName("Nav")
         self.nav.setFixedWidth(190)
-        for title, _key in PAGES:
-            self.nav.addItem(title)
+        for title, key in PAGES:
+            self.nav.addItem(QListWidgetItem(theme.icon(ICON_KEYS[key]), title))
 
         # -- right column ---------------------------------------------------
         right = QWidget()
@@ -82,6 +92,9 @@ class MainWindow(QMainWindow):
         brand = QLabel("chess-brain")
         brand.setObjectName("Brand")
         self.lbl_sub = theme.label("", role="small")
+        self.btn_update = QPushButton("업데이트 확인")
+        self.btn_update.setProperty("variant", "ghost")
+        self.btn_update.clicked.connect(self._check_updates)
         self.btn_refresh = QPushButton("새로고침")
         self.btn_refresh.setProperty("variant", "ghost")
         self.btn_refresh.clicked.connect(self._refresh_all)
@@ -89,6 +102,7 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(brand)
         header_layout.addSpacing(12)
         header_layout.addWidget(self.lbl_sub, 1)
+        header_layout.addWidget(self.btn_update)
         header_layout.addWidget(self.btn_refresh)
 
         self.stack = QStackedWidget()
@@ -143,10 +157,68 @@ class MainWindow(QMainWindow):
         self._navigate("mistakes")
         self._page("mistakes")._analyze(source)
 
+    def _check_updates(self) -> None:
+        self._navigate("settings")
+        settings = self._page("settings")
+        if not getattr(self, "_update_connected", False):
+            settings.update_checked.connect(self._on_update_checked)
+            self._update_connected = True
+        settings.check_update()
+
+    def _on_update_checked(self, result: dict) -> None:
+        if not result.get("ok"):
+            self.show_toast("업데이트 확인 실패 — 네트워크를 확인해보세요.")
+            return
+        latest = result.get("latest") or "?"
+        if result.get("available"):
+            self.show_toast(f"새 버전 v{latest} 있어요. 아래 링크에서 받을 수 있어요.")
+        else:
+            self.show_toast(f"현재 v{result['current']} — 최신 버전이에요.")
+
+    def show_toast(self, text: str) -> None:
+        parent = self.centralWidget()
+        toast = QLabel(text, parent)
+        toast.setObjectName("Toast")
+        toast.setWordWrap(True)
+        width = min(520, max(280, parent.width() - 120))
+        toast.setGeometry(60, 66, width, 44)
+        effect = QGraphicsOpacityEffect(toast)
+        toast.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity")
+        animation.setDuration(180)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        animation.start()
+        self._toast_animation = animation  # keep it alive until it finishes
+        toast.show()
+        QTimer.singleShot(3200, toast.deleteLater)
+
+    def _fade_page(self, page: QWidget) -> None:
+        effect = QGraphicsOpacityEffect(page)
+        page.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity")
+        animation.setDuration(160)
+        animation.setStartValue(0.55)
+        animation.setEndValue(1.0)
+
+        def _cleanup() -> None:
+            page.setGraphicsEffect(None)
+            self._page_effect = None
+            self._page_animation = None
+
+        animation.finished.connect(_cleanup)
+        self._page_effect = effect
+        self._page_animation = animation
+        animation.start()
+
     def _on_nav(self, index: int) -> None:
+        for i, (_, key) in enumerate(PAGES):
+            color = "#ffffff" if i == index else theme.MUTED
+            self.nav.item(i).setIcon(theme.icon(ICON_KEYS[key], color))
         key = PAGES[index][1]
         page = self._page(key)
         self.stack.setCurrentWidget(page)
+        self._fade_page(page)
         if hasattr(page, "refresh"):
             page.refresh()
         self._update_sub()
