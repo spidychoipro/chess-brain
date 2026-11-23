@@ -365,14 +365,17 @@ def pull_rclone_to_local(cfg: Dict[str, Any], on_progress: Progress = None) -> D
     return sync_local_folder(cfg, on_progress)
 
 
-def auto_catch_up(cfg: Dict[str, Any], on_progress: Progress = None) -> Dict[str, Any]:
+def auto_catch_up(
+    cfg: Dict[str, Any], on_progress: Progress = None, fetch_all: bool = False
+) -> Dict[str, Any]:
     """앱을 켜지 않은 사이 쌓인 대국을 자동으로 따라잡는다.
 
-    순서: 마운트 경로가 죽었으면 다시 붙이고 → rclone 으로 드라이브의 새 PGN을
-    로컬 폴더에 받고 → 로컬 폴더를 스캔한다. 드라이브 접근이 실패해도 로컬 파일
-    스캔은 그대로 진행해서 오프라인 학습이 막히지 않게 한다. 예외를 던지지 않고
-    ``warnings`` 에 담아 UI가 그대로 보여줄 수 있게 한다.
+    순서: chess.com 에서 새 PGN 받기 → 마운트 경로가 죽었으면 다시 붙이고 →
+    rclone 으로 드라이브의 새 PGN을 로컬 폴더에 받고 → 로컬 폴더를 스캔한다.
+    ``fetch_all=True`` 면 아직 안 받은 과거 게임 전부를 훑는다(5개월치 300판도
+    여기서 처리). 실패해도 예외 대신 ``warnings`` 에 담고 로컬 스캔은 계속한다.
     """
+    from core import chesscom as chesscom_mod
     from core import rclone as rclone_mod
 
     db.init_db()
@@ -380,10 +383,19 @@ def auto_catch_up(cfg: Dict[str, Any], on_progress: Progress = None) -> Dict[str
     result: Dict[str, Any] = {
         "files": 0, "games": 0, "new_games": 0, "problems": 0, "skipped": 0,
         "errors": 0, "pulled": False, "mounted": False, "warnings": [],
+        "fetched": 0, "fetch_ok": True,
     }
     if not root:
         result["warnings"].append("로컬 PGN 폴더가 지정되지 않아 자동 가져오기를 건너뛰었어요.")
         return result
+
+    # chess.com 은 게임 수와 무관하게 달 단위 API 한 번으로 받는다.
+    # 도구가 로컬/드라이브에 PGN 을 저장하면 아래 스캔이 그대로 읽는다.
+    fetch = chesscom_mod.fetch_recent(cfg, on_progress, full=fetch_all)
+    result["fetched"] = int(fetch.get("new", 0) or 0)
+    result["fetch_ok"] = bool(fetch.get("ok"))
+    if fetch.get("error"):
+        result["warnings"].append(fetch["error"])
 
     exe = rclone_mod.find_binary(cfg)
     remote = rclone_mod.get_remote(cfg)

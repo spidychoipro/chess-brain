@@ -129,10 +129,12 @@ class MainWindow(QMainWindow):
         # 앱을 켜지 않은 사이 쌓인 대국을 자동으로 따라잡는다. 켜져 있는 동안에도
         # 10분마다 한 번씩 확인해서 드라이브에 새 대국이 들어오면 바로 읽는다.
         self._auto_worker = None
-        QTimer.singleShot(700, self._auto_catch_up)
+        # 켜질 때는 과거 게임 전부를 훑는다(방치 기간이 길어도 놓치지 않게).
+        # 켜져 있는 동안에는 최근 7일만 가볍게 확인한다.
+        QTimer.singleShot(700, lambda: self._auto_catch_up(fetch_all=True))
         self._sync_timer = QTimer(self)
         self._sync_timer.setInterval(10 * 60 * 1000)
-        self._sync_timer.timeout.connect(self._auto_catch_up)
+        self._sync_timer.timeout.connect(lambda: self._auto_catch_up(fetch_all=False))
         self._sync_timer.start()
 
     # -- pages (lazy) -------------------------------------------------------
@@ -250,7 +252,7 @@ class MainWindow(QMainWindow):
 
     # -- automatic import ---------------------------------------------------
 
-    def _auto_catch_up(self) -> None:
+    def _auto_catch_up(self, fetch_all: bool = False) -> None:
         from core import config as cfg_mod
         from core import pipeline
         from ui.worker import PipelineWorker
@@ -263,7 +265,9 @@ class MainWindow(QMainWindow):
         if self._auto_worker is not None and self._auto_worker.isRunning():
             return
         self.lbl_sync.setText("새 대국 확인 중…")
-        worker = PipelineWorker(pipeline.auto_catch_up, cfg=cfg_mod.load_config())
+        worker = PipelineWorker(
+            pipeline.auto_catch_up, cfg=cfg_mod.load_config(), fetch_all=fetch_all
+        )
         self._auto_worker = worker
         worker.done.connect(self._on_auto_caught_up)
         worker.failed.connect(
@@ -273,9 +277,12 @@ class MainWindow(QMainWindow):
 
     def _on_auto_caught_up(self, result: dict) -> None:
         new = int(result.get("new_games", 0) or 0)
+        fetched = int(result.get("fetched", 0) or 0)
         if new:
             self.lbl_sync.setText(f"새 대국 {new}개 가져옴")
             self.show_toast(f"방치한 사이 대국 {new}개를 가져왔어요.")
+        elif fetched:
+            self.lbl_sync.setText(f"chess.com PGN {fetched}개 받음 · 이미 있는 대국")
         else:
             self.lbl_sync.setText("새 대국 없음 · 최신 상태")
         warnings = result.get("warnings") or []

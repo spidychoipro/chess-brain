@@ -16,6 +16,11 @@ DEFAULTS: Dict[str, Any] = {
     "chesscom": {
         "username": "",          # 내 chess.com 아이디 (빈 값이면 아래 색 기준)
         "fallback_color": "white",
+        # PGN 수집 도구(chess_pgn_sync.py). 비우면 ~/chesscom_pgn_auto 를 확인한다.
+        "auto_fetch": True,       # 앱을 켤 때 chess.com 에서 새 대국 먼저 받기
+        "sync_script": "",
+        "python": "",            # 비우면 도구 옆 python.cmd 에 적힌 파이썬 사용
+        "fetch_timeout": 900,    # 초. 5개월치 300판 따라잡기처럼 오래 걸릴 수 있다.
     },
     "google_drive": {
         "parent_folder_id": "",
