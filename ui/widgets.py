@@ -145,7 +145,7 @@ class ReviewPanel(QWidget):
         self.lbl_prompt.setText("이 국면에서 더 좋은 수를 찾아보세요")
         if self.item_type == "problem" and item.get("origin") == "line":
             self.lbl_prompt.setText("실제 대국에서 둔 수를 재현하세요")
-            self.lbl_context.setText(self.lbl_context.text() + "\n좋은 수 찾기가 아닌 기보 기억 연습입니다.")
+            self.lbl_context.setText(self.lbl_context.text() + "\n좋은 수를 찾는 게 아니라 기보를 외우는 연습입니다.")
         if item["id"] in self._exposed:
             self.lbl_prompt.setText("방금 본 수를 보드에서 연습하세요")
             self.lbl_context.setText("정답을 본 뒤의 연습입니다. 복습 성공으로 다시 기록하지 않습니다.")

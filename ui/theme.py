@@ -322,6 +322,12 @@ _ICON_SVG = {
         "<circle cx='15' cy='12' r='2.5' fill='{SURFACE}' stroke='{c}' stroke-width='2'/>"
         "<circle cx='11' cy='17' r='2.5' fill='{SURFACE}' stroke='{c}' stroke-width='2'/>"
     ),
+    "empty": (
+        "<rect x='3' y='3' width='18' height='18' rx='2' fill='none' "
+        "stroke='{c}' stroke-width='1.6'/>"
+        "<path stroke='{c}' stroke-width='1.6' d='M3 9h18M3 15h18M9 3v18M15 3v18'/>"
+        "<circle cx='12' cy='12' r='2.2' fill='{SURFACE}' stroke='{c}' stroke-width='1.6'/>"
+    ),
 }
 
 
@@ -337,3 +343,11 @@ def icon(key: str, color: str = MUTED) -> QIcon:
     renderer.render(painter)
     painter.end()
     return QIcon(pixmap)
+
+
+def icon_label(key: str, size: int = 44, color: str = MUTED) -> QLabel:
+    """A centered icon for empty states and other decorative spots."""
+    label = QLabel()
+    label.setPixmap(icon(key, color).pixmap(size, size))
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    return label

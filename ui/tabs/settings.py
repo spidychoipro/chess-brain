@@ -303,7 +303,7 @@ class SettingsTab(QWidget):
         self.btn_save.clicked.connect(self._save)
 
         self.log = QPlainTextEdit()
-        self.log.setPlaceholderText("동기화/분석 로그")
+        self.log.setPlaceholderText("대국 가져오기/분석 로그")
         self.log.setMinimumHeight(140)
 
         # 긴 설정 폼이 작은 창에서 잘리지 않도록 스크롤 영역으로 감싼다
