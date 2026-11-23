@@ -31,14 +31,14 @@ class TrainingTab(QWidget):
         self.cb_mode = QComboBox()
         self.cb_mode.addItem("다음 수 맞추기 (Recall)", "recall")
         self.cb_mode.addItem("실수 집중 훈련 (Drill)", "drill")
-        self.cb_mode.addItem("노테이션 배우기 (기초부터)", "notation")
+        self.cb_mode.addItem("기보 읽기 배우기 (기초부터)", "notation")
 
         self.cb_source = QComboBox()
-        self.cb_source.addItem("Bot", "bot")
-        self.cb_source.addItem("Human", "human")
-        self.cb_source.addItem("Both", "both")
+        self.cb_source.addItem("사람", "human")
+        self.cb_source.addItem("봇", "bot")
+        self.cb_source.addItem("전체", "both")
 
-        self.cb_only_wrong = QCheckBox("자주 틀린 것만 (wrong ≥ 1)")
+        self.cb_only_wrong = QCheckBox("틀린 문제만")
         self.lbl_stats = theme.label("", role="muted")
         self.btn_start = QPushButton("시작")
         self.btn_start.setProperty("variant", "primary")
@@ -49,7 +49,7 @@ class TrainingTab(QWidget):
         tool.setContentsMargins(14, 10, 14, 10)
         tool.addWidget(QLabel("모드"))
         tool.addWidget(self.cb_mode)
-        tool.addWidget(QLabel("소스"))
+        tool.addWidget(QLabel("상대"))
         tool.addWidget(self.cb_source)
         tool.addWidget(self.cb_only_wrong)
         tool.addStretch(1)
@@ -59,14 +59,11 @@ class TrainingTab(QWidget):
         dlay = QVBoxLayout(desc)
         dlay.setContentsMargins(18, 16, 18, 16)
         dlay.setSpacing(8)
-        dlay.addWidget(theme.label("보드에서 말을 옮겨서 다음 수를 둔다", role="h2"))
-        for line in [
-            "- 포지션을 보여주고, 보드에서 기물을 클릭해 다음 수를 둔다. 노테이션 몰라도 된다.",
-            "- 정답 → 잠깐 피드백 후 다음 문제. 오답 → 정답을 보드에 화살표로 보여주고, 같은 문제를 곧바로 다시 낸다.",
-            "- Drill 모드는 자주 틀린 문제와 실수에서 파생된 문제를 더 자주 뽑는다.",
-            "- 노테이션 배우기: 기물 글자부터 시작해, 마지막엔 기보만 보고 머릿속으로 보드를 그리는 것까지 단계별로 배운다.",
-        ]:
-            dlay.addWidget(theme.label(line, role="muted"))
+        self.desc_heading = theme.label("", role="h2")
+        self.desc_body = theme.label("", role="muted")
+        self.desc_body.setWordWrap(True)
+        dlay.addWidget(self.desc_heading)
+        dlay.addWidget(self.desc_body)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
@@ -92,9 +89,20 @@ class TrainingTab(QWidget):
         return None if source == "both" else source
 
     def refresh(self) -> None:
+        mode = self.cb_mode.currentData()
+        self.cb_source.setVisible(mode != "notation")
+        self.cb_only_wrong.setVisible(mode != "notation")
+        descriptions = {
+            "notation": ("기물 글자부터 기보 읽기까지", "1단계 기물과 글자 → 2단계 칸 이름 → 3단계 수 읽기 → 4단계 머릿속 보드. 진행은 저장됩니다."),
+            "recall": ("실제 대국의 기보 재현", "내가 실제로 둔 수를 보드에서 재현합니다. 좋은 수 찾기와는 구분됩니다. 한 번에 최대 10문제를 풉니다."),
+            "drill": ("내 실수에서 더 좋은 수 찾기", "복습 시간이 된 실수와 새 실수를 최대 10개씩 풉니다. 정답 뒤에는 상대 응수와 추천 변형을 확인할 수 있습니다."),
+        }
+        heading, body = descriptions[mode]
+        self.desc_heading.setText(heading)
+        self.desc_body.setText(body)
         counts = db.problem_counts(self._src())
         self.lbl_stats.setText(
-            f"문제 {counts['total']}개  ·  지금 복습할 것(due) {counts['due']}개"
+            f"문제 {counts['total']}개  ·  지금 복습 {counts['due']}개"
         )
 
     def _start(self) -> None:
@@ -105,21 +113,19 @@ class TrainingTab(QWidget):
             NotationDialog(self).exec()
             return
         soft = mode == "recall"
-        items = db.problems_due(
-            source=self._src(),
-            only_wrong=self.cb_only_wrong.isChecked(),
-            soft=soft,
-        )
+        items = (db.problems_due(limit=10, source=self._src(),
+                   only_wrong=self.cb_only_wrong.isChecked(), soft=True, origin="line") if soft else
+                 db.mistakes_due(limit=10, source=self._src(), only_wrong=self.cb_only_wrong.isChecked()))
         if not items:
             QMessageBox.information(
-                self, "트레이닝", "문제가 없습니다. 설정 탭에서 드라이브 동기화를 먼저 하세요."
+                self, "트레이닝", "문제가 없습니다. 홈에서 대국을 가져오거나 분석을 먼저 해보세요."
             )
             return
         cfg = cfg_mod.load_config()
         title = "다음 수 맞추기" if soft else "실수 집중 훈련"
         dialog = ReviewDialog(
             items,
-            "problem",
+            "problem" if soft else "mistake",
             wrong_due_seconds=int(cfg_mod.get(cfg, "sr.wrong_due_seconds", 600) or 600),
             title=title,
             parent=self,

@@ -78,7 +78,7 @@ class SettingsTab(QWidget):
         drive_actions2.addStretch(1)
 
         drive_form = QFormLayout()
-        drive_form.addRow(theme.label("chess.com 아이디", role="muted"), self.in_username)
+        drive_form.addRow(theme.label("chess.com 아이디 (선택)", role="muted"), self.in_username)
         drive_form.addRow(theme.label("부모 폴더", role="muted"), self.in_parent)
         drive_form.addRow(theme.label("API 키", role="muted"), self.in_api_key)
         drive_form.addRow(theme.label("폴더 상태", role="muted"), self.lbl_folder)
@@ -114,7 +114,7 @@ class SettingsTab(QWidget):
             "또는 (2) Google Drive for Desktop 을 설치해 나타나는 로컬 경로를 여기 지정. "
             "둘 다 구글 인증(credentials.json)이 필요 없음."
         )
-        self.btn_local_sync = QPushButton("로컬 동기화")
+        self.btn_local_sync = QPushButton("대국 가져오기")
         self.btn_local_sync.setProperty("variant", "primary")
         self.btn_local_sync.clicked.connect(self._sync_local)
         self.btn_open_local = QPushButton("폴더 열기")
@@ -256,9 +256,9 @@ class SettingsTab(QWidget):
 
         # -- defaults --------------------------------------------------------
         self.cb_source = QComboBox()
-        self.cb_source.addItem("Bot", "bot")
-        self.cb_source.addItem("Human", "human")
-        self.cb_source.addItem("Both", "both")
+        self.cb_source.addItem("사람", "human")
+        self.cb_source.addItem("봇", "bot")
+        self.cb_source.addItem("전체", "both")
         self.cb_mode = QComboBox()
         self.cb_mode.addItem("다음 수 맞추기 (Recall)", "recall")
         self.cb_mode.addItem("실수 집중 훈련 (Drill)", "drill")
@@ -301,6 +301,7 @@ class SettingsTab(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setWidget(content)
+        self.scroll = scroll
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 16, 20)
@@ -316,6 +317,26 @@ class SettingsTab(QWidget):
         self._load_into_widgets()
 
     # -- config <-> widgets -------------------------------------------------
+
+    def focus_field(self, target: str) -> None:
+        """홈의 첫 시작 체크리스트에서 넘어온 항목으로 화면을 옮긴다."""
+        widgets = {
+            "pgn": self.in_local,
+            "username": self.in_username,
+            "stockfish": self.in_stockfish,
+        }
+        widget = widgets.get(target)
+        if widget is None:
+            return
+        self.scroll.ensureWidgetVisible(widget)
+        widget.setFocus()
+        widget.selectAll()
+        note = (
+            "선택 항목이에요. 비워 두면 기본 색으로 내 수를 판별합니다."
+            if target == "username"
+            else "여기를 채운 뒤 '설정 저장'을 누르세요."
+        )
+        self._set_status(note, "accent")
 
     def refresh(self) -> None:
         """탭에 들어올 때마다 마운트 상태를 실제와 맞춘다."""
@@ -620,6 +641,7 @@ class SettingsTab(QWidget):
         self._save()
         if not self.in_local.text().strip():
             self._log("먼저 로컬 PGN 폴더를 선택하세요.")
+            self._set_status("먼저 로컬 PGN 폴더를 선택하세요.", "danger")
             return
         if self._worker is not None and self._worker.isRunning():
             self._log("이미 작업이 실행 중입니다.")
@@ -627,7 +649,7 @@ class SettingsTab(QWidget):
         self._run(
             self.btn_local_sync,
             pipeline.sync_local_folder,
-            "동기화 중…",
+            "대국 가져오는 중…",
             cfg=self.cfg,
         )
 

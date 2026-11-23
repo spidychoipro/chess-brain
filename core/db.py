@@ -13,6 +13,7 @@ Both tables carry their own SM-2 lite fields so spacing never mixes.
 from __future__ import annotations
 
 import sqlite3
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -85,6 +86,17 @@ CREATE TABLE IF NOT EXISTS problems (
     FOREIGN KEY(mistake_id) REFERENCES mistakes(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS review_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_type TEXT NOT NULL,
+    item_id INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    grade INTEGER NOT NULL,
+    first_try INTEGER NOT NULL,
+    reviewed_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_review_events_time ON review_events(reviewed_at);
+
 CREATE INDEX IF NOT EXISTS idx_games_source ON games(source);
 CREATE INDEX IF NOT EXISTS idx_games_processed ON games(processed);
 CREATE INDEX IF NOT EXISTS idx_games_analyzed ON games(analyzed);
@@ -127,8 +139,13 @@ def init_db() -> None:
 def _migrate(conn: sqlite3.Connection) -> None:
     """이미 만들어진 DB 에 새 컬럼을 붙인다(재분석 없이 쓰게)."""
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(mistakes)").fetchall()}
-    if "reply_san" not in cols:
-        conn.execute("ALTER TABLE mistakes ADD COLUMN reply_san TEXT DEFAULT ''")
+    for name, definition in {
+        "reply_san": "TEXT DEFAULT ''", "accepted_sans": "TEXT DEFAULT '[]'",
+        "best_line": "TEXT DEFAULT '[]'", "reply_line": "TEXT DEFAULT '[]'",
+        "mate_before": "INTEGER", "mate_after": "INTEGER",
+    }.items():
+        if name not in cols:
+            conn.execute(f"ALTER TABLE mistakes ADD COLUMN {name} {definition}")
 
 
 def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
@@ -341,6 +358,11 @@ def add_mistake(
     source: str,
     ply: int,
     reply_san: str = "",
+    accepted_sans: Optional[List[str]] = None,
+    best_line: Optional[List[str]] = None,
+    reply_line: Optional[List[str]] = None,
+    mate_before: Optional[int] = None,
+    mate_after: Optional[int] = None,
 ) -> int:
     """Insert a mistake, or return the id of the existing identical one."""
     # 최선수를 그대로 둔 수는 실수가 아니다(가짜 실수 방지).
@@ -381,6 +403,11 @@ def add_mistake(
                 (fen, source_game_id or "", my_san or "", int(ply)),
             ).fetchone()
             mid = row["id"] if row else 0
+        if mid and accepted_sans is not None:
+            conn.execute("UPDATE mistakes SET accepted_sans=?, best_line=?, reply_line=?, "
+                         "mate_before=?, mate_after=? WHERE id=?",
+                         (json.dumps(accepted_sans), json.dumps(best_line or []),
+                          json.dumps(reply_line or []), mate_before, mate_after, mid))
         conn.commit()
         return int(mid)
     finally:
@@ -396,7 +423,7 @@ def get_mistake(mistake_id: int) -> Optional[Dict[str, Any]]:
         conn.close()
 
 
-def update_mistake_sr(mistake_id: int, state: SRState) -> None:
+def update_mistake_sr(mistake_id: int, state: SRState, first_try: Optional[bool] = None) -> None:
     conn = connect()
     try:
         conn.execute(
@@ -423,6 +450,7 @@ def update_mistake_sr(mistake_id: int, state: SRState) -> None:
                 mistake_id,
             ),
         )
+        _record_review(conn, "mistake", "mistakes", mistake_id, state, first_try)
         conn.commit()
     finally:
         conn.close()
@@ -432,10 +460,17 @@ def mistakes_due(
     limit: int = 100,
     source: Optional[str] = None,
     only_wrong: bool = False,
+    grade: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     now = now_ts()
-    where = []
-    params: List[Any] = []
+    where = ["(due_at=0 OR due_at<=?)"]
+    params: List[Any] = [now]
+    if grade == "blunder":
+        where.append("loss>=2.0")
+    elif grade == "mistake":
+        where.append("loss>=1.0")
+    elif grade == "inaccuracy":
+        where.append("loss<1.0")
     if source in ("bot", "human"):
         where.append("source=?")
         params.append(source)
@@ -535,7 +570,7 @@ def mistake_counts(source: Optional[str] = None) -> Dict[str, int]:
         ).fetchone()["c"]
         unreviewed = conn.execute(
             f"SELECT COUNT(*) c FROM mistakes {where} "
-            f"{'AND' if where else 'WHERE'} (analyzed=0 OR reps=0)",
+            f"{'AND' if where else 'WHERE'} (reviewed_at=0 AND reviewed=0)",
             params,
         ).fetchone()["c"]
         return {"total": total, "due": due, "unreviewed": unreviewed}
@@ -601,7 +636,7 @@ def get_problem(problem_id: int) -> Optional[Dict[str, Any]]:
         conn.close()
 
 
-def update_problem_sr(problem_id: int, state: SRState) -> None:
+def update_problem_sr(problem_id: int, state: SRState, first_try: Optional[bool] = None) -> None:
     origin = "line"
     conn = connect()
     try:
@@ -633,6 +668,7 @@ def update_problem_sr(problem_id: int, state: SRState) -> None:
                 problem_id,
             ),
         )
+        _record_review(conn, "problem", "problems", problem_id, state, first_try)
         conn.commit()
     finally:
         conn.close()
@@ -643,16 +679,22 @@ def problems_due(
     source: Optional[str] = None,
     only_wrong: bool = False,
     soft: bool = False,
+    origin: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """`soft=True` keeps next-move recall flowing (due + origin only)."""
     now = now_ts()
     where = ["enabled=1"]
     params: List[Any] = []
+    if origin in ("line", "mistake"):
+        where.append("origin=?")
+        params.append(origin)
     if source in ("bot", "human"):
         where.append("source=?")
         params.append(source)
     if only_wrong:
         where.append("wrong >= 1")
+    where.append("(due_at=0 OR due_at<=?)")
+    params.append(now)
     clause = "WHERE " + " AND ".join(where)
     if soft:
         order = """
@@ -757,5 +799,51 @@ def source_accuracy(source: Optional[str] = None) -> Dict[str, Any]:
         total = correct + wrong
         acc = (correct / total * 100.0) if total else 0.0
         return {"correct": correct, "wrong": wrong, "accuracy": round(acc, 1)}
+    finally:
+        conn.close()
+
+
+def _record_review(conn, kind, table, item_id, state, first_try):
+    if first_try is None:
+        return
+    row = conn.execute(f"SELECT source FROM {table} WHERE id=?", (item_id,)).fetchone()
+    if row:
+        conn.execute("INSERT INTO review_events(item_type,item_id,source,grade,first_try,reviewed_at) "
+                     "VALUES(?,?,?,?,?,?)", (kind, item_id, row["source"],
+                     1 if state.streak == 0 else 2, int(first_try), state.reviewed_at))
+
+
+def recent_review_stats(source=None, days=30):
+    where = "WHERE item_type='mistake' AND reviewed_at>=?"
+    params = [now_ts() - days * 86400]
+    if source in ("bot", "human"):
+        where += " AND source=?"
+        params.append(source)
+    conn = connect()
+    try:
+        row = conn.execute("SELECT COUNT(*) total, COALESCE(SUM(first_try),0) first_try, "
+                           "COALESCE(SUM(CASE WHEN grade=1 THEN 1 ELSE 0 END),0) reveals "
+                           "FROM review_events " + where, params).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def migrate_game_identity(old_id, new_id, signatures):
+    """Rekey a legacy game only when its saved line positions match this PGN."""
+    if old_id == new_id:
+        return
+    conn = connect()
+    try:
+        if conn.execute("SELECT 1 FROM games WHERE game_id=?", (new_id,)).fetchone():
+            return
+        rows = conn.execute("SELECT fen,target_san,ply FROM problems "
+                            "WHERE source_game_id=? AND origin='line'", (old_id,)).fetchall()
+        if not rows or not all((r["fen"], r["target_san"], r["ply"]) in signatures for r in rows):
+            return
+        conn.execute("UPDATE games SET game_id=? WHERE game_id=?", (new_id, old_id))
+        conn.execute("UPDATE problems SET source_game_id=? WHERE source_game_id=?", (new_id, old_id))
+        conn.execute("UPDATE mistakes SET source_game_id=? WHERE source_game_id=?", (new_id, old_id))
+        conn.commit()
     finally:
         conn.close()

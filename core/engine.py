@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import chess
@@ -156,9 +156,6 @@ def find_stockfish(fast: bool = False) -> Optional[str]:
 def _to_pawns(pov) -> float:
     """Convert a PovScore to pawns from White's point of view."""
     score = pov.white()
-    if score.is_mate():
-        m = score.mate()
-        return 100.0 if (m or 0) > 0 else -100.0
     return float(score.score(mate_score=10000) or 0) / 100.0
 
 
@@ -170,6 +167,11 @@ class MistakeResult:
     best_san: str
     my_san: str
     reply_san: str = ""   # 내가 둔 수에 대한 상대의 최선 응수(왜 나빴는지)
+    accepted_sans: List[str] = field(default_factory=list)
+    best_line: List[str] = field(default_factory=list)
+    reply_line: List[str] = field(default_factory=list)
+    mate_before: Optional[int] = None
+    mate_after: Optional[int] = None
 
 
 class Stockfish:
@@ -223,6 +225,13 @@ class Stockfish:
         info = self._engine.analyse(board, chess.engine.Limit(depth=self.depth))  # type: ignore[union-attr]
         return _to_pawns(info["score"])
 
+    def candidates(self, board: chess.Board) -> List[Dict[str, Any]]:
+        assert self._engine is not None
+        infos = self._engine.analyse(board, chess.engine.Limit(depth=self.depth), multipv=3)
+        return [{"info": info, "best_san": board.san(info["pv"][0]),
+                 "pawns_white": _to_pawns(info["score"])}
+                for info in infos if info.get("pv")]
+
 
 def find_mistake(
     path: str,
@@ -247,19 +256,35 @@ def find_mistake(
         engine.__enter__()
 
     try:
-        before = engine.best_move(board)
+        candidates = engine.candidates(board)
+        if not candidates:
+            return None
+        before = candidates[0]
         sign = 1.0 if board.turn == chess.WHITE else -1.0
         score_before = before["pawns_white"] * sign
 
         my_san = board.san(move)
         best_san = before["best_san"]
+        mate_before = before["info"]["score"].pov(board.turn).mate()
+        accepted = []
+        for candidate in candidates:
+            mate = candidate["info"]["score"].pov(board.turn).mate()
+            value = candidate["pawns_white"] * sign
+            if (mate_before is not None and mate_before > 0 and mate is not None and mate > 0) or (
+                mate_before is None and mate is None and score_before - value <= 0.25
+            ):
+                accepted.append(candidate["best_san"])
+        if best_san not in accepted:
+            accepted.insert(0, best_san)
 
         # 엔진 최선수를 그대로 둔 건 실수가 아니다.
-        if best_san and best_san == my_san:
+        if my_san in accepted:
             return None
 
         after_board = board.copy()
         after_board.push(move)
+        after = None
+        mate_after = None
         # 수를 둔 뒤 국면이 끝났으면 엔진 점수를 믿지 말고 직접 판정한다.
         # 체크메이트 직후 Stockfish 는 Mate(0) 을 주는데, _to_pawns 가 부호를
         # 못 살려서 -100 으로 뒤집히는 문제가 있었다(메이트를 걸었는데 손실 200).
@@ -268,7 +293,9 @@ def find_mistake(
         elif after_board.is_game_over():     # 스테일메이트/기물부족/50수 = 무승부
             score_after = 0.0
         else:
-            score_after = engine.evaluate(after_board) * sign
+            after = engine.best_move(after_board)
+            score_after = after["pawns_white"] * sign
+            mate_after = after["info"]["score"].pov(board.turn).mate()
 
         loss = score_before - score_after
 
@@ -278,7 +305,7 @@ def find_mistake(
             reply_san = ""
             if not after_board.is_game_over():
                 try:
-                    reply_san = engine.best_move(after_board).get("best_san") or ""
+                    reply_san = (after.get("best_san") or "") if after else ""
                 except Exception:  # noqa: BLE001 - 응수 못 구해도 실수 자체는 살린다
                     reply_san = ""
             return MistakeResult(
@@ -288,6 +315,11 @@ def find_mistake(
                 best_san=best_san,
                 my_san=my_san,
                 reply_san=reply_san,
+                accepted_sans=accepted,
+                best_line=[m.uci() for m in before["info"].get("pv", [])[:8]],
+                reply_line=([move.uci()] + [m.uci() for m in after["info"].get("pv", [])[:7]]) if after else [move.uci()],
+                mate_before=mate_before,
+                mate_after=mate_after,
             )
         return None
     finally:
