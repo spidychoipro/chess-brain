@@ -68,6 +68,10 @@ def build_copy_cmd(exe: str, remote: str, dest: str, config: str = "") -> List[s
         dest,
         "--include", "*.pgn",
         "--transfers", "4",
+        # 자동 확인에서 network가 막혀도 앱이 멈추지 않게 상한을 둔다.
+        "--contimeout", "10s",
+        "--timeout", "30s",
+        "--retries", "1",
         "--stats", "1s",
         "--stats-one-line",
         "-v",
