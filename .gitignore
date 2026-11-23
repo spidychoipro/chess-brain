@@ -20,6 +20,9 @@ config/credentials.json
 .vscode/
 .idea/
 
+# 번들 엔진 (용량이 커서 git 제외. fetch-stockfish.ps1 로 받는다)
+engines/
+
 # build
 build/
 dist/
