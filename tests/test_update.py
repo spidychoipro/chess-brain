@@ -26,12 +26,14 @@ class UpdateTests(unittest.TestCase):
         self.assertLess(update.version_key("nightly"), update.version_key("0.0.1"))
 
     def test_newer_tag_reports_available(self):
-        payload = json.dumps([{"name": "v0.2.1"}]).encode("utf-8")
+        major, minor, ver_patch = update.version_key(version.__version__)
+        newer = f"v{major}.{minor}.{ver_patch + 1}"
+        payload = json.dumps([{"name": newer}]).encode("utf-8")
         with patch.object(update.urllib.request, "urlopen", return_value=FakeResponse(payload)):
             result = update.check_latest()
         self.assertTrue(result["ok"])
         self.assertTrue(result["available"])
-        self.assertEqual(result["latest"], "0.2.1")
+        self.assertEqual(result["latest"], newer.lstrip("v"))
         self.assertEqual(result["current"], version.__version__)
 
     def test_same_tag_reports_not_available(self):
