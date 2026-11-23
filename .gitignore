@@ -22,3 +22,4 @@ config/credentials.json
 build/
 dist/
 *.spec
+!chess-brain.spec

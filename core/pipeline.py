@@ -21,6 +21,12 @@ def _note(on_progress: Progress, msg: str) -> None:
         on_progress(msg)
 
 
+def _count(on_progress: Progress, done: int, total: int, msg: str) -> None:
+    """숫자 진행률이 필요한 단계에서 쓴다. worker가 이 dict를 시그널로 바꾼다."""
+    if on_progress:
+        on_progress({"done": done, "total": total, "message": msg})
+
+
 def _user_settings(cfg: Dict[str, Any]):
     username = cfg_mod.get(cfg, "chesscom.username", "") or ""
     fallback = cfg_mod.get(cfg, "chesscom.fallback_color", "white") or "white"
@@ -37,7 +43,8 @@ def _fill_missing_replies_with(sf, on_progress: Progress = None, limit: int = 50
         return 0
     _note(on_progress, f"상대 응수 채우는 중: {len(rows)}개")
     filled = 0
-    for r in rows:
+    for i, r in enumerate(rows, 1):
+        _count(on_progress, i, len(rows), f"상대 응수 채우는 중 {i}/{len(rows)}")
         try:
             b = chess.Board(r["fen"])
             b.push(b.parse_san(r["my_san"]))
@@ -87,6 +94,12 @@ def ingest_pgn_text(
     for game in parser.iter_games(pgn_text):
         stats["games"] += 1
         gid = parser.game_id(game)
+        # Validate ownership before marking a game processed.
+        parser.user_color(game, username, fallback)
+        if gid != parser.legacy_game_id(game):
+            existing_lines = parser.extract_user_lines(game, source, username, fallback)
+            db.migrate_game_identity(parser.legacy_game_id(game), gid,
+                {(ln.fen_before, ln.san, ln.ply) for ln in existing_lines})
         db.upsert_game(gid, source, file_id, modified_time)
         if db.is_game_processed(gid):
             continue
@@ -170,7 +183,8 @@ def sync_local_folder(
 
     _note(on_progress, f".pgn {len(pgn_files)}개 발견")
     total = dict(empty)
-    for path in pgn_files:
+    for i, path in enumerate(pgn_files, 1):
+        _count(on_progress, i, len(pgn_files), f"PGN 읽는 중 {i}/{len(pgn_files)}")
         rel = os.path.relpath(path, root)
         parts = rel.split(os.sep)
         # 하위폴더 이름 우선, 파일 이름의 힌트는 보조로 쓴다.
@@ -191,10 +205,6 @@ def sync_local_folder(
         for k in total:
             total[k] += stats.get(k, 0)
         total["files"] += 1
-        _note(
-            on_progress,
-            f"완료: {os.path.basename(path)} ({src} / lines {stats['lines']})",
-        )
     _note(on_progress, f"동기화 완료: {total}")
     return total
 
@@ -365,7 +375,7 @@ def unmount_drive(cfg: Dict[str, Any] = None, on_progress: Progress = None) -> D
 
 def analyze_mistakes(
     cfg: Dict[str, Any],
-    source: str = "human",
+    source: Optional[str] = "human",
     on_progress: Progress = None,
     auto_sync: bool = False,
 ) -> Dict[str, int]:
@@ -435,6 +445,7 @@ def analyze_mistakes(
         by_file.setdefault(g["file_id"], []).append(g)
 
     stats = {"games": 0, "mistakes": 0, "problems": 0, "filled": 0}
+    total_games = len(pending)
     service = None
     if any(not fid.startswith("local:") for fid in by_file):
         service = drive.build_service()
@@ -459,8 +470,15 @@ def analyze_mistakes(
                     game, source=gsource, username=username, fallback_color=fallback
                 )
                 stats["games"] += 1
-                _note(on_progress, f"분석 중: {game.headers.get('White','?')} vs {game.headers.get('Black','?')}")
+                _count(
+                    on_progress,
+                    stats["games"],
+                    total_games,
+                    f"분석 중 {stats['games']}/{total_games} · "
+                    f"{game.headers.get('White', '?')} vs {game.headers.get('Black', '?')}",
+                )
                 for ln in lines:
+                    _note(on_progress, f"분석 중 · {ln.ply}번째 반수")
                     board = chess.Board(ln.fen_before)
                     try:
                         move = board.parse_san(ln.san)
@@ -488,6 +506,11 @@ def analyze_mistakes(
                         source=gsource,
                         ply=ln.ply,
                         reply_san=res.reply_san,
+                        accepted_sans=res.accepted_sans,
+                        best_line=res.best_line,
+                        reply_line=res.reply_line,
+                        mate_before=res.mate_before,
+                        mate_after=res.mate_after,
                     )
                     stats["mistakes"] += 0 if mid == 0 else 1
                     if mid and res.best_san:

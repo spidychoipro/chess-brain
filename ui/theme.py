@@ -80,6 +80,13 @@ QLabel[state="accent"] {{ color: {ACCENT}; font-weight: 700; }}
 QLabel[state="success"] {{ color: {SUCCESS}; font-weight: 600; }}
 QLabel[state="danger"] {{ color: {DANGER}; font-weight: 600; }}
 QLabel[state="muted"] {{ color: {MUTED}; }}
+QLabel[role="empty"] {{
+    color: {MUTED};
+    font-size: 13px;
+    padding: 16px;
+    border: 1px dashed {BORDER};
+    border-radius: 10px;
+}}
 
 QLabel#LineText {{
     font-family: "Cascadia Mono", "Consolas", "D2Coding", monospace;
@@ -162,6 +169,13 @@ QLineEdit#AnswerInput {{
     padding: 12px 14px;
 }}
 QComboBox::drop-down {{ border: none; width: 24px; }}
+QComboBox::down-arrow {{
+    image: none;
+    border-style: solid;
+    border-width: 6px 5px 0 5px;
+    border-color: {MUTED} transparent transparent transparent;
+    margin-right: 7px;
+}}
 QComboBox QAbstractItemView {{
     background: {SURFACE_2};
     border: 1px solid {BORDER};
@@ -175,6 +189,7 @@ QTableWidget {{
     border: 1px solid {BORDER};
     border-radius: 10px;
     gridline-color: #262b38;
+    outline: 0;
 }}
 QTableWidget::item {{ padding: 6px 8px; }}
 QTableWidget::item:selected {{ background: #2b3a5e; color: {TEXT}; }}
@@ -187,16 +202,19 @@ QHeaderView::section {{
     font-weight: 600;
 }}
 QTableCornerButton::section {{ background: {SURFACE_2}; border: none; }}
+QSplitter::handle {{ background: transparent; }}
+QSplitter::handle:hover {{ background: {SURFACE_2}; border-radius: 4px; }}
 
 QProgressBar {{
     background: {SURFACE_2};
-    border: none;
+    border: 1px solid {BORDER};
     border-radius: 6px;
-    height: 12px;
+    height: 18px;
     text-align: center;
-    color: transparent;
+    color: {TEXT};
+    font-size: 11px;
 }}
-QProgressBar::chunk {{ background: {ACCENT}; border-radius: 6px; }}
+QProgressBar::chunk {{ background: {ACCENT}; border-radius: 5px; }}
 
 QPlainTextEdit {{
     background: {BG};

@@ -41,29 +41,7 @@ try {
     # 주의: unittest 는 절대 제외하지 말 것.
     #   googleapiclient -> httplib2 -> pyparsing -> pyparsing.testing 이 import 시점에
     #   unittest 를 끌어온다. 빼면 드라이브/로컬 동기화가 "No module named 'unittest'" 로 깨진다.
-    & $py -m PyInstaller --noconfirm --clean --onedir --windowed --name chess-brain `
-        --hidden-import googleapiclient `
-        --hidden-import googleapiclient.discovery `
-        --hidden-import googleapiclient.http `
-        --hidden-import google_auth_oauthlib `
-        --hidden-import google_auth_oauthlib.flow `
-        --hidden-import google.auth `
-        --hidden-import google.auth.transport `
-        --hidden-import google.auth.transport.requests `
-        --exclude-module tkinter `
-        --exclude-module lib2to3 `
-        --exclude-module test `
-        --exclude-module curses `
-        --exclude-module turtledemo `
-        --exclude-module turtle `
-        --exclude-module idlelib `
-        --exclude-module pydoc `
-        --exclude-module pydoc_data `
-        --exclude-module doctest `
-        --exclude-module ensurepip `
-        --exclude-module venv `
-        --exclude-module xmlrpc `
-        main.py
+    & $py -m PyInstaller --noconfirm --clean chess-brain.spec
     if ($LASTEXITCODE -ne 0) { throw "빌드 실패" }
 
     # -- 빌드 후: 백업한 설정/DB 복원 (셀프테스트보다 먼저) -------------------

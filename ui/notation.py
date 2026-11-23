@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -32,6 +33,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QStackedWidget,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -175,7 +177,12 @@ def _two_col(board: QWidget, side: QVBoxLayout) -> QHBoxLayout:
     body.addWidget(board, 3)
     wrap = QWidget()
     wrap.setLayout(side)
-    body.addWidget(wrap, 2)
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.NoFrame)
+    scroll.setWidget(wrap)
+    scroll.setMinimumWidth(250)
+    body.addWidget(scroll, 2)
     return body
 
 
@@ -216,6 +223,10 @@ class MasteryBar(QWidget):
                 f"(지금 {rec.correct}개 · {acc:.0f}%)"
             )
         self.bar.setValue(min(rec.correct, rec.goal))
+        if rec.key == "stage1" and not rec.passed:
+            required = [f"{kind}:{pt}" for kind in ("letter2glyph", "glyph2letter") for pt in chess.PIECE_TYPES]
+            covered = sum(rec.state["items"].get(key, {}).get("r", 0) > 0 for key in required)
+            self.lbl.setText(self.lbl.text() + f"\n기물별 양방향 학습 {covered}/12 완료 필요")
 
 
 class _Stage(QWidget):
@@ -233,6 +244,8 @@ class _Stage(QWidget):
         if self.prog is None:
             return
         self.prog.note(item_id_, ok)
+        if self.key == "stage1":
+            self._check_mastery()
         self.prog.flush()
         bar = getattr(self, "mastery", None)
         if bar is not None:
@@ -287,11 +300,12 @@ class Stage1Pieces(_Stage):
     """
 
     key = "stage1"
-    goal = 15
+    goal = 30
     accuracy = 0.8
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._check_mastery()
 
         self.board = ChessBoard()
         self.board.set_interactive(False)
@@ -306,7 +320,7 @@ class Stage1Pieces(_Stage):
         self.prompt = QVBoxLayout()
         self.prompt.setAlignment(Qt.AlignCenter)
         self.lbl_pick = theme.label("고르세요:", role="muted")
-        self.answers = QHBoxLayout()
+        self.answers = QGridLayout()
         self.answers.setAlignment(Qt.AlignCenter)
         self.lbl_fb = theme.label("", role="small")
         self.lbl_fb.setWordWrap(True)
@@ -355,6 +369,13 @@ class Stage1Pieces(_Stage):
         self._advance_timer.setSingleShot(True)
         self._advance_timer.timeout.connect(self._new_question)
         self._new_question()
+
+    def _check_mastery(self):
+        required = [f"{kind}:{pt}" for kind in ("letter2glyph", "glyph2letter")
+                    for pt in chess.PIECE_TYPES]
+        covered = all(self.prog.state["items"].get(key, {}).get("r", 0) > 0 for key in required)
+        self.prog.state["passed"] = (covered and self.prog.correct >= self.goal
+                                     and self.prog.accuracy() >= self.accuracy)
 
     # -- 목표 + 범례 -------------------------------------------------------
     def _goal_card(self) -> QWidget:
@@ -486,12 +507,12 @@ class Stage1Pieces(_Stage):
             self.lbl_board.setText(
                 "노란 칸 = 기물이 있는 자리, 점 = 이 기물이 갈 수 있는 칸."
             )
-            for pt in self._pieces():
+            for i, pt in enumerate(self._pieces()):
                 btn = QPushButton(_GLYPH[pt])
                 btn.setStyleSheet('font-family: "Segoe UI Symbol"; font-size: 30px;')
                 btn.setMinimumWidth(66)
                 btn.clicked.connect(lambda _=False, p=pt: self._answer_piece(p))
-                self.answers.addWidget(btn)
+                self.answers.addWidget(btn, i // 3, i % 3)
         else:
             self.lbl_q.setText("보드에서 이 기물의 글자는?")
             self.board.set_hide_pieces(False)
@@ -501,11 +522,11 @@ class Stage1Pieces(_Stage):
             opts = list(_ANSWER_LETTERS)
             if self._level() >= 2:
                 opts.append("(없음)")
-            for opt in opts:
+            for i, opt in enumerate(opts):
                 btn = QPushButton(opt)
                 btn.setMinimumWidth(56)
                 btn.clicked.connect(lambda _=False, o=opt: self._answer_letter(o))
-                self.answers.addWidget(btn)
+                self.answers.addWidget(btn, i // 3, i % 3)
 
     # -- 채점 --------------------------------------------------------------
     def _explain(self, ok: bool) -> str:
@@ -543,7 +564,7 @@ class Stage1Pieces(_Stage):
         theme.set_state(self.lbl_fb, "success" if ok else "danger")
         self.btn_next.setEnabled(True)
         if ok:
-            self._advance_timer.start(1500)
+            self.btn_next.setFocus()
 
     def start(self) -> None:
         self._advance_timer.stop()
@@ -722,13 +743,15 @@ class Stage2Squares(_Stage):
 
     def _finish(self, ok: bool, msg: str) -> None:
         self._answered = True
-        self._record(ok, self._last_id)
+        self._record(ok and self._hint_i == 0, self._last_id)
+        if ok and self._hint_i:
+            msg += " · 힌트 사용: 통과 점수에는 포함하지 않아요"
         self.board.glow_square(self._target)
         self.lbl_fb.setText(msg)
         theme.set_state(self.lbl_fb, "success" if ok else "danger")
         self.btn_next.setEnabled(True)
         if ok:
-            self._advance_timer.start(1200)
+            self.btn_next.setFocus()
 
     def start(self) -> None:
         self._advance_timer.stop()
@@ -786,6 +809,10 @@ class Stage3Read(_Stage):
         self.btn_reveal = QPushButton("모르겠음 (정답 보기)")
         self.btn_reveal.setProperty("variant", "ghost")
         self.btn_reveal.clicked.connect(self._reveal)
+        self.btn_next = QPushButton("확인했어요 · 다음 문제 →")
+        self.btn_next.setProperty("variant", "primary")
+        self.btn_next.clicked.connect(self._advance)
+        self.btn_next.hide()
         self.lbl_fb = theme.label("", role="small")
         self.lbl_fb.setWordWrap(True)
 
@@ -797,6 +824,7 @@ class Stage3Read(_Stage):
         side.addWidget(self.lbl_tip)
         side.addWidget(self.btn_reveal)
         side.addWidget(self.lbl_fb)
+        side.addWidget(self.btn_next)
         side.addStretch(1)
 
         root = QVBoxLayout(self)
@@ -854,6 +882,7 @@ class Stage3Read(_Stage):
 
     def _show(self) -> None:
         self._timer.stop()
+        self.btn_next.hide()
         item = self.cur
         self.board.clear_marks()
         self._wrong_streak = 0
@@ -884,7 +913,7 @@ class Stage3Read(_Stage):
             self.lbl_fb.setText(f"정답!   {item['san']}")
             theme.set_state(self.lbl_fb, "success")
             self._record(True, item_id(item))
-            self._timer.start(1400)
+            self.btn_next.show()
             return
         self._wrong_streak += 1
         if self._last_uci:
@@ -918,7 +947,7 @@ class Stage3Read(_Stage):
         if len(self._queue) < 2:
             self._fill_queue()
         self._queue.insert(min(2, len(self._queue)), item_id(item))
-        self._timer.start(2000)
+        self.btn_next.show()
 
 
 # ---------------------------------------------------------------------------
@@ -970,6 +999,10 @@ class Stage4Blind(_Stage):
         self.btn_reveal = QPushButton("정답 칸 보기")
         self.btn_reveal.setProperty("variant", "ghost")
         self.btn_reveal.clicked.connect(self._reveal)
+        self.btn_next = QPushButton("확인했어요 · 다음 문제 →")
+        self.btn_next.setProperty("variant", "primary")
+        self.btn_next.clicked.connect(self._advance)
+        self.btn_next.hide()
         self.lbl_fb = theme.label("", role="small")
         self.lbl_fb.setWordWrap(True)
 
@@ -982,6 +1015,7 @@ class Stage4Blind(_Stage):
         side.addWidget(self.btn_hint)
         side.addWidget(self.btn_reveal)
         side.addWidget(self.lbl_fb)
+        side.addWidget(self.btn_next)
         side.addStretch(1)
 
         root = QVBoxLayout(self)
@@ -1004,6 +1038,7 @@ class Stage4Blind(_Stage):
     def _load_line(self) -> None:
         name, sans = self.lines[self._line_idx]
         self.steps = line_steps(sans)
+        self.board.glow_square(None)
         self.idx = 0
         self.lbl_line.setText(f"라인: {name}")
         self._show()
@@ -1027,11 +1062,17 @@ class Stage4Blind(_Stage):
 
     def _show(self) -> None:
         self._timer.stop()
+        self.btn_next.hide()
+        self._used_hint = False
         st = self._cur()
         self.board.clear_marks()
         self.board.clear_picks()
         self._picked = None
         self._wrong_streak = 0
+        self._used_hint = False
+        self.btn_next.hide()
+        self.btn_reveal.setEnabled(True)
+        self.btn_hint.setEnabled(True)
         self.lbl_moves.setText(self._notation())
         self.board.set_interactive(True)
         self.board.set_pick_mode(True)
@@ -1039,6 +1080,7 @@ class Stage4Blind(_Stage):
         if st is None:
             self._finish_line()
             return
+        self.board.set_position(st["fen"], flipped=False)
         self.lbl_q.setText(
             f"{self.idx + 1}번째 수:   {st['san']}   → 어느 칸에서 어느 칸으로?"
         )
@@ -1070,8 +1112,10 @@ class Stage4Blind(_Stage):
             self.lbl_fb.setText(f"정답!   {st['san']} = {chev(st['from'])} → {chev(st['to'])}")
             theme.set_state(self.lbl_fb, "success")
             self.board.set_pick_mode(False)
-            self._record(True, self._item_id())
-            self._timer.start(1200)
+            self._record(not self._used_hint, self._item_id())
+            self.btn_reveal.setEnabled(False)
+            self.btn_hint.setEnabled(False)
+            self.btn_next.show()
             return
         self._wrong_streak += 1
         self.board.clear_picks()
@@ -1083,6 +1127,7 @@ class Stage4Blind(_Stage):
         st = self._cur()
         if st is None:
             return
+        self._used_hint = True
         self.board.glow_square(st["from"])
         self.lbl_fb.setText(f"출발 칸은 {chev(st['from'])} 이야. 도착 칸을 클릭해봐.")
         theme.set_state(self.lbl_fb, "muted")
@@ -1102,7 +1147,9 @@ class Stage4Blind(_Stage):
         )
         theme.set_state(self.lbl_fb, "danger")
         self._record(False, self._item_id())
-        self._timer.start(1800)
+        self.btn_reveal.setEnabled(False)
+        self.btn_hint.setEnabled(False)
+        self.btn_next.show()
 
     def _advance(self) -> None:
         self._wrong_streak = 0
@@ -1132,6 +1179,7 @@ class NotationDialog(QDialog):
         self.setMinimumSize(620, 420)
 
         self.stack = QStackedWidget()
+        self.stack.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.pages: List[_Stage] = []
         self.buttons: List[QPushButton] = []
 

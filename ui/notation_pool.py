@@ -11,6 +11,8 @@
 """
 from __future__ import annotations
 
+import hashlib
+
 from typing import Any, Dict, List, Tuple
 
 import chess
@@ -78,7 +80,8 @@ def _mk(fen: str, san: str, concept: str) -> Dict[str, Any]:
 
 
 def item_id(it: Dict[str, Any]) -> str:
-    return f"{it.get('concept','')}:{it['san']}"
+    position = hashlib.sha1(it["fen"].encode("utf-8")).hexdigest()[:12]
+    return f"{it.get('concept','')}:{it['san']}:{position}"
 
 
 def stage3_pool() -> List[Dict[str, Any]]:
@@ -121,7 +124,7 @@ def stage3_pool() -> List[Dict[str, Any]]:
     items.append(_mk("1r5k/P7/8/8/8/8/7K/8 w - - 0 1", "axb8=Q", "promo_capture"))
     items.append(_mk("4k3/8/8/8/8/5N2/8/1N2K3 w - - 0 1", "Nbd2", "disambig_file"))
     items.append(_mk("4k3/8/8/R7/8/8/8/R3K3 w - - 0 1", "R1a3", "disambig_rank"))
-    items.append(_mk("4k3/8/8/8/8/2Q5/8/Q3K3 w - - 0 1", "Qa1b2", "disambig_both"))
+    items.append(_mk("4k3/8/8/8/8/Q7/8/Q1Q1K3 w - - 0 1", "Qa1b2", "disambig_both"))
 
     # 앙파상: 1.e4 a6 2.e5 d5 -> exd6
     b = chess.Board()

@@ -256,9 +256,9 @@ class SettingsTab(QWidget):
 
         # -- defaults --------------------------------------------------------
         self.cb_source = QComboBox()
-        self.cb_source.addItem("Bot", "bot")
-        self.cb_source.addItem("Human", "human")
-        self.cb_source.addItem("Both", "both")
+        self.cb_source.addItem("사람", "human")
+        self.cb_source.addItem("봇", "bot")
+        self.cb_source.addItem("전체", "both")
         self.cb_mode = QComboBox()
         self.cb_mode.addItem("다음 수 맞추기 (Recall)", "recall")
         self.cb_mode.addItem("실수 집중 훈련 (Drill)", "drill")
@@ -301,6 +301,7 @@ class SettingsTab(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setWidget(content)
+        self.scroll = scroll
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 16, 20)
@@ -316,6 +317,21 @@ class SettingsTab(QWidget):
         self._load_into_widgets()
 
     # -- config <-> widgets -------------------------------------------------
+
+    def focus_field(self, target: str) -> None:
+        """홈의 첫 시작 체크리스트에서 넘어온 항목으로 화면을 옮긴다."""
+        widgets = {
+            "pgn": self.in_local,
+            "username": self.in_username,
+            "stockfish": self.in_stockfish,
+        }
+        widget = widgets.get(target)
+        if widget is None:
+            return
+        self.scroll.ensureWidgetVisible(widget)
+        widget.setFocus()
+        widget.selectAll()
+        self._set_status("여기를 채운 뒤 '설정 저장'을 누르세요.", "accent")
 
     def refresh(self) -> None:
         """탭에 들어올 때마다 마운트 상태를 실제와 맞춘다."""
@@ -620,6 +636,7 @@ class SettingsTab(QWidget):
         self._save()
         if not self.in_local.text().strip():
             self._log("먼저 로컬 PGN 폴더를 선택하세요.")
+            self._set_status("먼저 로컬 PGN 폴더를 선택하세요.", "danger")
             return
         if self._worker is not None and self._worker.isRunning():
             self._log("이미 작업이 실행 중입니다.")

@@ -29,7 +29,7 @@ class UserLine:
     source_game_id: str
 
 
-def game_id(game: chess.pgn.Game) -> str:
+def legacy_game_id(game: chess.pgn.Game) -> str:
     """Stable id so re-scans don't duplicate games."""
     h = game.headers
     link = h.get("Link", "") or h.get("Site", "")
@@ -46,6 +46,17 @@ def game_id(game: chess.pgn.Game) -> str:
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
 
 
+def game_id(game: chess.pgn.Game) -> str:
+    # Keep existing chess.com IDs; generic Site headers do not identify a game.
+    link = game.headers.get("Link", "")
+    site = game.headers.get("Site", "")
+    if link or "/game/" in site.lower():
+        return legacy_game_id(game)
+    content = "|".join((legacy_game_id(game), game.board().fen(),
+                        " ".join(m.uci() for m in game.mainline_moves())))
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()[:24]
+
+
 def user_color(
     game: chess.pgn.Game,
     username: str = "",
@@ -56,10 +67,11 @@ def user_color(
         name = username.strip().lower()
         white = (game.headers.get("White") or "").strip().lower()
         black = (game.headers.get("Black") or "").strip().lower()
-        if name and name in white:
+        if name and name == white:
             return chess.WHITE
-        if name and name in black:
+        if name and name == black:
             return chess.BLACK
+        raise ValueError(f"PGN에 설정한 아이디 '{username.strip()}'가 없습니다. 내 계정을 확인하세요.")
     return chess.WHITE if fallback.lower().startswith("w") else chess.BLACK
 
 
@@ -85,6 +97,8 @@ def iter_games(pgn_text: str) -> Iterator[chess.pgn.Game]:
         game = chess.pgn.read_game(stream)
         if game is None:
             return
+        if game.errors:
+            raise ValueError(f"잘못된 PGN: {game.errors[0]}")
         yield game
 
 

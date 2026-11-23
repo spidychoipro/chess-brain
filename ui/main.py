@@ -1,8 +1,10 @@
 """Main window: sidebar nav + header + stacked pages.
 
-Mistakes stay the first page - that is the point of the app.
+Home is the entry point: it shows today's work and the actions that lead to it.
 """
 from __future__ import annotations
+
+from PySide6.QtCore import QTimer
 
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -19,9 +21,9 @@ from core import db
 from ui import theme
 
 PAGES = [
+    ("♜  홈", "home"),
     ("♟  내 실수", "mistakes"),
     ("♞  기보 트레이닝", "training"),
-    ("♜  홈", "home"),
     ("♝  기록/통계", "stats"),
     ("⚙  설정", "settings"),
 ]
@@ -101,6 +103,12 @@ class MainWindow(QMainWindow):
         self.nav.currentRowChanged.connect(self._on_nav)
         self.nav.setCurrentRow(0)
 
+        home = self._page("home")
+        home.openReview.connect(self._goto_review)
+        home.openImport.connect(self._goto_import)
+        home.openSetup.connect(self._goto_setup)
+        home.analyze.connect(self._goto_analyze)
+
     # -- pages (lazy) -------------------------------------------------------
 
     def _page(self, key: str) -> QWidget:
@@ -113,6 +121,25 @@ class MainWindow(QMainWindow):
         return self._pages[key]
 
     # -- behavior -----------------------------------------------------------
+
+    def _navigate(self, key):
+        self.nav.setCurrentRow(next(i for i, (_, k) in enumerate(PAGES) if k == key))
+
+    def _goto_review(self) -> None:
+        self._navigate("mistakes")
+        self._page("mistakes")._review()
+
+    def _goto_import(self) -> None:
+        self._navigate("settings")
+        self._page("settings")._sync_local()
+
+    def _goto_setup(self, target: str) -> None:
+        self._navigate("settings")
+        self._page("settings").focus_field(target)
+
+    def _goto_analyze(self, source: str) -> None:
+        self._navigate("mistakes")
+        self._page("mistakes")._analyze(source)
 
     def _on_nav(self, index: int) -> None:
         key = PAGES[index][1]
@@ -136,6 +163,15 @@ class MainWindow(QMainWindow):
         self._update_sub()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt name
+        running = [getattr(page, "_worker", None) for page in self._pages.values()]
+        running = [worker for worker in running if worker is not None and worker.isRunning()]
+        if running:
+            for worker in running:
+                worker.requestInterruption()
+            self.lbl_sub.setText("진행 중인 작업을 정리한 뒤 종료합니다…")
+            event.ignore()
+            QTimer.singleShot(400, self.close)
+            return
         # 붙여둔 드라이브가 있으면 앱을 닫을 때 함께 해제한다.
         try:
             from core import rclone as rclone_mod

@@ -13,8 +13,10 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSplitter,
     QTableWidget,
@@ -25,7 +27,7 @@ from PySide6.QtWidgets import (
 
 from core import config as cfg_mod
 from core import db
-from core.utils import classify_loss
+from core.utils import classify_loss, loss_label
 from ui import theme
 from ui.board import ChessBoard
 from ui.widgets import ReviewDialog, _uci_of
@@ -43,16 +45,19 @@ class MistakesTab(QWidget):
         super().__init__(parent)
         self._worker = None
         self._rows: list = []
+        self._previewed = set()
+        self._limit = 100
 
         self.cb_source = QComboBox()
-        self.cb_source.addItem("Human", "human")
-        self.cb_source.addItem("Bot", "bot")
-        self.cb_source.addItem("Both", "both")
+        self.cb_source.addItem("사람", "human")
+        self.cb_source.addItem("봇", "bot")
+        self.cb_source.addItem("전체", "both")
         # both 로 분석했는데 목록은 Human 만 보여서 '사람만 했다'로 보이던 문제.
         # 기본을 Both 로 둬서 분석한 게 다 보이게 한다.
         self.cb_source.setCurrentIndex(self.cb_source.findData("both"))
 
-        self.cb_only_wrong = QCheckBox("자주 틀린 것만 (wrong ≥ 1)")
+        self.cb_only_wrong = QCheckBox("틀린 문제만")
+        self.cb_only_wrong.setToolTip("복습에서 한 번 이상 틀린 실수만 표시합니다.")
 
         # 손실 폰 기준 등급 필터. Grok 지적처럼 '구분이 없다'는 걸 채운다.
         self.cb_grade = QComboBox()
@@ -62,31 +67,63 @@ class MistakesTab(QWidget):
         self.cb_grade.addItem("부정확만", "inaccuracy")
 
         self.lbl_stats = theme.label("", role="muted")
-        self.btn_analyze = QPushButton("실수 분석 (Stockfish)")
-        self.btn_review = QPushButton("실수 복습 시작")
+        self.btn_analyze_h = QPushButton("사람전 분석")
+        self.btn_analyze_b = QPushButton("봇전 분석")
+        self.btn_analyze_all = QPushButton("전체 분석")
+        for button in (self.btn_analyze_h, self.btn_analyze_b, self.btn_analyze_all):
+            button.setToolTip("아직 분석하지 않은 대국을 Stockfish로 분석합니다.")
+        self.btn_review = QPushButton("복습 시작")
+        self.btn_review.setToolTip("복습할 시간이 된 실수와 새 실수를 최대 10개 풉니다.")
         self.btn_review.setProperty("variant", "primary")
+        self.btn_refresh = QPushButton("새로고침")
+        self.btn_refresh.setProperty("variant", "ghost")
 
         toolbar = theme.card(flat=True)
         tool = QHBoxLayout(toolbar)
         tool.setContentsMargins(14, 10, 14, 10)
-        tool.addWidget(QLabel("소스"))
+        tool.setSpacing(8)
+        tool.addWidget(QLabel("보기"))
         tool.addWidget(self.cb_source)
         tool.addWidget(QLabel("등급"))
         tool.addWidget(self.cb_grade)
         tool.addWidget(self.cb_only_wrong)
         tool.addStretch(1)
-        tool.addWidget(self.btn_analyze)
+        tool.addWidget(self.btn_analyze_h)
+        tool.addWidget(self.btn_analyze_b)
+        tool.addWidget(self.btn_analyze_all)
         tool.addWidget(self.btn_review)
+        tool.addWidget(self.btn_refresh)
+
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 1)
+        self.bar.setValue(0)
+        self.bar.setFormat("%v / %m")
+        self.lbl_progress = theme.label("", role="small")
+        self.btn_cancel = QPushButton("중단")
+        self.btn_cancel.setProperty("variant", "ghost")
+        progress_row = QHBoxLayout()
+        progress_row.setContentsMargins(0, 0, 0, 0)
+        progress_row.setSpacing(10)
+        progress_row.addWidget(self.bar, 1)
+        progress_row.addWidget(self.lbl_progress, 2)
+        progress_row.addWidget(self.btn_cancel)
+        self.progress_box = QWidget()
+        self.progress_box.setLayout(progress_row)
+        self.progress_box.hide()
+
+        self.btn_more = QPushButton("더 보기")
+        self.btn_more.setProperty("variant", "ghost")
+        self.btn_more.hide()
 
         self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(
             [
-                "손실(loss)",
+                "손실",
                 "등급",
-                "소스",
-                "내가 둔 수",
-                "엔진 정답",
-                "상대 응수",
+                "상대",
+                "내 수",
+                "추천 수",
+                "응수",
                 "맞음",
                 "틀림",
                 "다음 복습",
@@ -96,7 +133,21 @@ class MistakesTab(QWidget):
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setShowGrid(False)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        header = self.table.horizontalHeader()
+        header.setMinimumSectionSize(44)
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSelectionMode(QTableWidget.SingleSelection)
+        self.table.verticalHeader().setDefaultSectionSize(34)
+        # Review history stays available in row tooltips and the preview caption.
+        # Keep the six chess columns visible alongside a useful-sized board.
+        for column in (6, 7, 8):
+            self.table.setColumnHidden(column, True)
+        for column, tip in enumerate((
+            "평가 손실 (폰 단위). 메이트 관련 국면은 M으로 표시합니다.",
+            "엔진 평가 손실에 따른 분류", "대국 상대 유형",
+            "실제 대국에서 둔 수", "엔진이 추천하는 수", "내 수에 대한 상대의 응수",
+        )):
+            self.table.horizontalHeaderItem(column).setToolTip(tip)
         self.table.verticalHeader().setVisible(False)
 
         layout = QVBoxLayout(self)
@@ -105,17 +156,20 @@ class MistakesTab(QWidget):
         layout.addWidget(theme.label("내 실수", role="h1"))
         layout.addWidget(
             theme.label(
-                "엔진으로 내가 둔 수의 평가 손실을 재서 실수를 모으고, 그 실수를 간격 반복으로 복습한다.",
+                "내 대국에서 놓친 수를 확인하고, 복습할 시간이 된 실수부터 다시 풀어보세요.",
                 role="muted",
             )
         )
         layout.addWidget(toolbar)
         layout.addWidget(self.lbl_stats)
+        layout.addWidget(self.progress_box)
+        layout.addWidget(self.btn_more)
 
         # 노테이션을 모르면 SAN 표가 무의미하니, 행을 고르면 보드가 뜨게 한다.
         self.board = ChessBoard()
         self.board.set_interactive(False)
         self.board.setMinimumWidth(320)
+        self.lbl_preview_title = theme.label("포지션 미리보기", role="h2")
         self.lbl_preview_move = theme.label("", role="small")
         self.lbl_preview_move.setWordWrap(True)
         self.lbl_preview = theme.label("행을 고르면 여기에 포지션이 뜬다.", role="muted")
@@ -125,6 +179,7 @@ class MistakesTab(QWidget):
         side_l = QVBoxLayout(side)
         side_l.setContentsMargins(0, 0, 0, 0)
         side_l.setSpacing(8)
+        side_l.addWidget(self.lbl_preview_title)
         side_l.addWidget(self.board, 1)
         side_l.addWidget(self.lbl_preview_move)
         side_l.addWidget(self.lbl_preview)
@@ -134,13 +189,18 @@ class MistakesTab(QWidget):
         split.addWidget(side)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
+        split.setHandleWidth(16)
+        split.setChildrenCollapsible(False)
+        split.setSizes([470, 350])
         layout.addWidget(split, 1)
 
-        self.btn_refresh = QPushButton("새로고침")
-        self.btn_refresh.setProperty("variant", "ghost")
         self.btn_refresh.clicked.connect(self.refresh)
-        self.btn_analyze.clicked.connect(self._analyze)
+        self.btn_analyze_h.clicked.connect(lambda: self._analyze("human"))
+        self.btn_analyze_b.clicked.connect(lambda: self._analyze("bot"))
+        self.btn_analyze_all.clicked.connect(lambda: self._analyze("both"))
         self.btn_review.clicked.connect(self._review)
+        self.btn_cancel.clicked.connect(self._cancel)
+        self.btn_more.clicked.connect(self._show_more)
         self.cb_source.currentIndexChanged.connect(self.refresh)
         self.cb_grade.currentIndexChanged.connect(self.refresh)
         self.cb_only_wrong.stateChanged.connect(self.refresh)
@@ -154,9 +214,12 @@ class MistakesTab(QWidget):
             self.board.set_position(chess.STARTING_FEN)
             self.board.clear_marks()
             self.lbl_preview_move.setText("")
-            self.lbl_preview.setText("행을 고르면 여기에 포지션이 뜬다.")
+            self.lbl_preview_title.setText("포지션 미리보기")
+            self.lbl_preview.setText("목록에서 실수를 선택하세요. 두 번 누르면 해당 문제를 연습합니다.")
             return
         r = self._rows[idx]
+        self.lbl_preview_title.setText("선택한 실수")
+        self._previewed.add(r["id"])
         fen = r.get("fen") or chess.STARTING_FEN
         self.board.set_position(fen)
         self.board.clear_marks()
@@ -172,21 +235,13 @@ class MistakesTab(QWidget):
         if best_uci:
             self.board.show_hint(best_uci)
         self.lbl_preview_move.setText(
-            f"빨강 화살표 = 내가 둔 수  ·  초록 화살표 = 엔진 정답"
+            f"빨강: 내 수 {my_san or '?'}  ·  초록: 추천 수 {best_san or '?'}"
         )
         grade = classify_loss(r.get("loss"))[1]
-        if reply_san:
-            why = (
-                f"내가 {my_san or '?'}를 두니 상대는 {reply_san}(으)로 응수할 수 있었어. "
-                f"그래서 대신 {best_san or '?'}가 좋았어."
-            )
-        else:
-            why = (
-                "상대 응수는 아직 없음 — 위 '실수 분석'을 다시 돌리면 채워진다."
-            )
+        why = f"상대 응수 {reply_san}" if reply_san else "저장된 상대 응수 없음"
         self.lbl_preview.setText(
-            f"내 수 {my_san or '?'}   →   정답 {best_san or '?'}   "
-            f"({grade} · 손실 {r.get('loss', 0):.2f})\n{why}"
+            f"{grade} · {loss_label(r)} · {why}\n"
+            f"맞음 {r['correct']} · 틀림 {r['wrong']} · 다음 복습 {_fmt_ts(r['due_at'])}"
         )
 
     # -- data ---------------------------------------------------------------
@@ -198,10 +253,12 @@ class MistakesTab(QWidget):
         counts = db.mistake_counts(src)
         gc = db.game_counts(src)
         self.lbl_stats.setText(
-            f"전체 {counts['total']}  ·  지금 복습할 것(due) {counts['due']}  ·  "
-            f"아직 안 본 것 {counts['unreviewed']}  ·  미분석 게임 {gc['pending']}"
+            f"전체 {counts['total']}  ·  지금 복습 {counts['due']}  ·  "
+            f"새 실수 {counts['unreviewed']}  ·  미분석 대국 {gc['pending']}"
         )
-        rows = db.list_mistakes(source=src, only_wrong=only_wrong)
+        rows = db.list_mistakes(limit=self._limit, source=src, only_wrong=only_wrong)
+        self.btn_more.setText(f"더 보기 (지금 {len(rows)}개 / 전체 {counts['total']}개)")
+        self.btn_more.setVisible(len(rows) >= self._limit)
         rows = self._filter_by_grade(rows)
         self._rows = rows
         self.table.setRowCount(0)
@@ -210,7 +267,7 @@ class MistakesTab(QWidget):
             self.table.insertRow(i)
             grade = classify_loss(r.get("loss"))[1]
             vals = [
-                f"{r['loss']:.2f}",
+                "M" if "메이트" in loss_label(r) else f"{float(r.get('loss') or 0):.2f}",
                 grade,
                 "봇" if r["source"] == "bot" else "사람",
                 r["my_san"],
@@ -222,10 +279,16 @@ class MistakesTab(QWidget):
             ]
             for c, v in enumerate(vals):
                 item = QTableWidgetItem(v)
-                if c == 0:
-                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                item.setTextAlignment(Qt.AlignCenter)
+                item.setToolTip(
+                    f"{loss_label(r)}\n내 수 {r['my_san']} · 추천 수 {r['best_san']} · 응수 {r.get('reply_san') or '-'}\n"
+                    f"맞음 {r['correct']} · 틀림 {r['wrong']} · 다음 복습 {_fmt_ts(r['due_at'])}"
+                )
                 self.table.setItem(i, c, item)
-        self.table.resizeColumnsToContents()
+
+    def _show_more(self) -> None:
+        self._limit += 100
+        self.refresh()
 
     def _filter_by_grade(self, rows: list) -> list:
         want = self.cb_grade.currentData()
@@ -261,6 +324,8 @@ class MistakesTab(QWidget):
             wrong_due_seconds=int(cfg_mod.get(cfg, "sr.wrong_due_seconds", 600) or 600),
             title="실수 하나 복습",
             parent=self,
+            practice=(self._rows[idx]["id"] in self._previewed or
+                      (self._rows[idx].get("due_at") or 0) > int(time.time())),
         )
         dialog.exec()
         self.refresh()
@@ -268,7 +333,10 @@ class MistakesTab(QWidget):
     def _review(self) -> None:
         source = self.cb_source.currentData()
         src = None if source == "both" else source
-        items = db.mistakes_due(source=src, only_wrong=self.cb_only_wrong.isChecked())
+        items = db.mistakes_due(limit=10, source=src,
+            only_wrong=self.cb_only_wrong.isChecked(), grade=self.cb_grade.currentData())
+        for item in items:
+            item["practice"] = item["id"] in self._previewed
         if not items:
             QMessageBox.information(self, "내 실수 복습", "복습할 실수가 없습니다. 먼저 동기화/분석을 하세요.")
             return
@@ -283,35 +351,71 @@ class MistakesTab(QWidget):
         dialog.exec()
         self.refresh()
 
-    def _analyze(self) -> None:
+    def _analyze(self, source=None) -> None:
         from core import engine as engine_mod
         from core import pipeline
 
+        if source is None:
+            source = self.cb_source.currentData()
+        selected = None if source == "both" else source
         cfg = self._cfg()
-        source = self.cb_source.currentData()
-        if source == "both":
-            source = cfg_mod.get(cfg, "mistakes.source", "human")
         if not engine_mod.engine_available(cfg_mod.get(cfg, "stockfish.path", "")):
             QMessageBox.warning(
                 self,
                 "실수 분석",
-                "설정 탭에서 stockfish.exe 경로를 먼저 지정하세요.\n"
-                "경로가 없으면 실수 분석은 꺼진 상태다.",
+                "설정에서 stockfish.exe 경로를 먼저 지정하세요.\n"
+                "경로가 없으면 실수 분석은 꺼져 있어요.",
             )
             return
         if self._worker is not None and self._worker.isRunning():
             return
-        self.btn_analyze.setEnabled(False)
+        self._set_busy(True)
         self._worker = PipelineWorker(
-            pipeline.analyze_mistakes, cfg=cfg, source=source, auto_sync=True
+            pipeline.analyze_mistakes, cfg=cfg, source=selected, auto_sync=True
         )
         self._worker.message.connect(lambda m: self.lbl_stats.setText(m))
+        self._worker.progressed.connect(self._on_progress)
         self._worker.failed.connect(self._on_failed)
         self._worker.done.connect(self._on_analyzed)
-        self._worker.finished.connect(lambda: self.btn_analyze.setEnabled(True))
+        self._worker.finished.connect(self._set_busy_finished)
         self._worker.start()
 
+    def _set_busy(self, busy: bool) -> None:
+        for button in (
+            self.btn_analyze_h,
+            self.btn_analyze_b,
+            self.btn_analyze_all,
+            self.btn_review,
+        ):
+            button.setEnabled(not busy)
+        self.progress_box.setVisible(busy)
+        self.btn_cancel.setEnabled(busy)
+        if busy:
+            self.bar.setRange(0, 1)
+            self.bar.setValue(0)
+            self.lbl_progress.setText("준비 중…")
+        else:
+            self.lbl_progress.setText("")
+
+    def _set_busy_finished(self) -> None:
+        self._set_busy(False)
+
+    def _on_progress(self, done: int, total: int, message: str) -> None:
+        if total > 0:
+            self.bar.setRange(0, total)
+            self.bar.setValue(min(done, total))
+            self.lbl_progress.setText(message)
+        elif message:
+            self.lbl_progress.setText(message)
+
+    def _cancel(self) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.requestInterruption()
+            self.btn_cancel.setEnabled(False)
+            self.lbl_progress.setText("중단 요청함…")
+
     def _on_failed(self, msg: str) -> None:
+        self._set_busy(False)
         QMessageBox.warning(self, "실수 분석", msg)
         self.refresh()
 

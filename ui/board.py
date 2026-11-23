@@ -80,6 +80,8 @@ class ChessBoard(QWidget):
         self._legal_targets = []
         self._hint = None
         self._wrong = None
+        self._glow = None
+        self._picks = []
         self.update()
 
     def set_interactive(self, on: bool) -> None:
@@ -162,7 +164,7 @@ class ChessBoard(QWidget):
         ox, oy = self._origin()
         f = chess.square_file(sq)
         r = chess.square_rank(sq)
-        col = f if self.flipped else 7 - f
+        col = 7 - f if self.flipped else f
         row = r if self.flipped else 7 - r
         return QRectF(ox + col * s, oy + row * s, s, s)
 
@@ -173,7 +175,7 @@ class ChessBoard(QWidget):
         row = int((p.y() - oy) // s)
         if not (0 <= col <= 7 and 0 <= row <= 7):
             return None
-        f = col if self.flipped else 7 - col
+        f = 7 - col if self.flipped else col
         r = row if self.flipped else 7 - row
         return chess.square(f, r)
 
@@ -228,7 +230,7 @@ class ChessBoard(QWidget):
     def _draw_coords(self, p: QPainter, s: float, ox: float, oy: float) -> None:
         p.setFont(QFont("Segoe UI", max(7, int(s * 0.17))))
         for col in range(8):
-            f = col if self.flipped else 7 - col
+            f = 7 - col if self.flipped else col
             rect = QRectF(ox + col * s, oy + 7 * s, s, s)
             p.setPen(QPen(DARK if (7 + col) % 2 == 0 else LIGHT))
             p.drawText(

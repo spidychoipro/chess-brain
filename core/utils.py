@@ -61,6 +61,18 @@ def classify_loss(loss) -> tuple:
     return ("inaccuracy", "부정확")
 
 
+def loss_label(row: dict) -> str:
+    before, after = row.get("mate_before"), row.get("mate_after")
+    if after is not None and after <= 0:
+        return "메이트 허용"
+    if before is not None and before > 0:
+        return "메이트 기회 놓침"
+    loss = float(row.get("loss") or 0)
+    if loss >= 80:
+        return "메이트 관련 · 구기록"
+    return f"평가 손실 {loss:.2f}"
+
+
 def today_str() -> str:
     return time.strftime("%Y-%m-%d")
 

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from core import db
+from core.utils import loss_label
 from ui import theme
 
 
@@ -20,9 +21,9 @@ class StatsTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.cb_source = QComboBox()
-        self.cb_source.addItem("Human", "human")
-        self.cb_source.addItem("Bot", "bot")
-        self.cb_source.addItem("Both", "both")
+        self.cb_source.addItem("사람", "human")
+        self.cb_source.addItem("봇", "bot")
+        self.cb_source.addItem("전체", "both")
 
         self.lbl_acc = theme.label("", role="big")
         self.lbl_acc_caption = theme.label("정답률 (실수 복습 기준)", role="caption")
@@ -39,14 +40,14 @@ class StatsTab(QWidget):
         self.btn_refresh.clicked.connect(self.refresh)
 
         toolbar = QHBoxLayout()
-        toolbar.addWidget(theme.label("소스", role="muted"))
+        toolbar.addWidget(theme.label("상대", role="muted"))
         toolbar.addWidget(self.cb_source)
         toolbar.addStretch(1)
         toolbar.addWidget(self.btn_refresh)
 
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(
-            ["손실(loss)", "소스", "내가 둔 수", "엔진 정답", "틀린 횟수"]
+            ["손실", "상대", "내 수", "추천 수", "틀린 횟수"]
         )
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -73,10 +74,11 @@ class StatsTab(QWidget):
     def refresh(self) -> None:
         source = self.cb_source.currentData()
         src = None if source == "both" else source
-        acc = db.source_accuracy(src)
-        self.lbl_acc.setText(f"{acc['accuracy']}%")
+        recent = db.recent_review_stats(src)
+        total = recent["total"]
+        self.lbl_acc.setText(f"{recent['first_try']/total*100:.1f}%" if total else "기록 없음")
         self.lbl_acc_caption.setText(
-            f"정답률 (실수 복습 기준) · 맞음 {acc['correct']} · 틀림 {acc['wrong']}"
+            f"최근 30일 첫 시도 성공 · {total}회 중 {recent['first_try']}회 · 정답 확인 {recent['reveals']}회 (업데이트 이후)"
         )
         rows = db.hardest_mistakes(limit=15, source=src)
         self.table.setRowCount(0)
@@ -84,7 +86,7 @@ class StatsTab(QWidget):
             i = self.table.rowCount()
             self.table.insertRow(i)
             vals = [
-                f"{r['loss']:.2f}",
+                loss_label(r),
                 "봇" if r["source"] == "bot" else "사람",
                 r["my_san"],
                 r["best_san"],
