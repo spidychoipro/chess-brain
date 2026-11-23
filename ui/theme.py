@@ -18,6 +18,9 @@ TEXT = "#e8eaf0"
 MUTED = "#98a0b3"
 ACCENT = "#5b8cff"
 ACCENT_HI = "#6f9bff"
+# 버튼·진행바 배경용. ACCENT 그대로 쓰면 흰 글자 대비가 3.16:1이라 AA 미달.
+ACCENT_STRONG = "#2f5fc4"
+ACCENT_STRONG_HI = "#3a6bd8"
 SUCCESS = "#3fbf7f"
 DANGER = "#ef5f6b"
 WARNING = "#f0b429"
@@ -120,7 +123,7 @@ QListWidget#Nav::item:hover {{
     color: {TEXT};
 }}
 QListWidget#Nav::item:selected {{
-    background: {ACCENT};
+    background: {ACCENT_STRONG};
     color: #ffffff;
     font-weight: 600;
 }}
@@ -135,13 +138,14 @@ QPushButton {{
 QPushButton:hover {{ background: {SURFACE_3}; }}
 QPushButton:pressed {{ background: #1f2431; }}
 QPushButton:disabled {{ color: #5a6272; background: #1b1e26; border-color: #232733; }}
+QPushButton:focus {{ border: 1px solid {ACCENT}; }}
 QPushButton[variant="primary"] {{
-    background: {ACCENT};
-    border: 1px solid {ACCENT};
+    background: {ACCENT_STRONG};
+    border: 1px solid {ACCENT_STRONG};
     color: #ffffff;
     font-weight: 600;
 }}
-QPushButton[variant="primary"]:hover {{ background: {ACCENT_HI}; border-color: {ACCENT_HI}; }}
+QPushButton[variant="primary"]:hover {{ background: {ACCENT_STRONG_HI}; border-color: {ACCENT_STRONG_HI}; }}
 QPushButton[variant="success"] {{
     background: {SUCCESS}; border: 1px solid {SUCCESS};
     color: #06210f; font-weight: 700;
@@ -191,6 +195,7 @@ QTableWidget {{
     gridline-color: #262b38;
     outline: 0;
 }}
+QTableWidget:focus {{ border: 1px solid {ACCENT}; }}
 QTableWidget::item {{ padding: 6px 8px; }}
 QTableWidget::item:selected {{ background: #2b3a5e; color: {TEXT}; }}
 QHeaderView::section {{
@@ -214,7 +219,7 @@ QProgressBar {{
     color: {TEXT};
     font-size: 11px;
 }}
-QProgressBar::chunk {{ background: {ACCENT}; border-radius: 5px; }}
+QProgressBar::chunk {{ background: {ACCENT_STRONG}; border-radius: 5px; }}
 
 QPlainTextEdit {{
     background: {BG};

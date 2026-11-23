@@ -8,7 +8,7 @@ from __future__ import annotations
 import time
 
 import chess
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -67,6 +67,10 @@ class MistakesTab(QWidget):
         self.cb_grade.addItem("부정확만", "inaccuracy")
 
         self.lbl_stats = theme.label("", role="muted")
+        self.lbl_stats.setWordWrap(True)
+        self.lbl_empty = theme.label("", role="empty")
+        self.lbl_empty.setWordWrap(True)
+        self.lbl_empty.hide()
         self.btn_analyze_h = QPushButton("사람전 분석")
         self.btn_analyze_b = QPushButton("봇전 분석")
         self.btn_analyze_all = QPushButton("전체 분석")
@@ -97,7 +101,7 @@ class MistakesTab(QWidget):
         self.bar = QProgressBar()
         self.bar.setRange(0, 1)
         self.bar.setValue(0)
-        self.bar.setFormat("%v / %m")
+        self.bar.setFormat("%p%")
         self.lbl_progress = theme.label("", role="small")
         self.btn_cancel = QPushButton("중단")
         self.btn_cancel.setProperty("variant", "ghost")
@@ -163,7 +167,7 @@ class MistakesTab(QWidget):
         layout.addWidget(toolbar)
         layout.addWidget(self.lbl_stats)
         layout.addWidget(self.progress_box)
-        layout.addWidget(self.btn_more)
+        layout.addWidget(self.lbl_empty)
 
         # 노테이션을 모르면 SAN 표가 무의미하니, 행을 고르면 보드가 뜨게 한다.
         self.board = ChessBoard()
@@ -193,6 +197,7 @@ class MistakesTab(QWidget):
         split.setChildrenCollapsible(False)
         split.setSizes([470, 350])
         layout.addWidget(split, 1)
+        layout.addWidget(self.btn_more)
 
         self.btn_refresh.clicked.connect(self.refresh)
         self.btn_analyze_h.clicked.connect(lambda: self._analyze("human"))
@@ -257,10 +262,19 @@ class MistakesTab(QWidget):
             f"새 실수 {counts['unreviewed']}  ·  미분석 대국 {gc['pending']}"
         )
         rows = db.list_mistakes(limit=self._limit, source=src, only_wrong=only_wrong)
-        self.btn_more.setText(f"더 보기 (지금 {len(rows)}개 / 전체 {counts['total']}개)")
+        self.btn_more.setText(f"{self._limit}개 더 보기 · 전체 {counts['total']}개")
         self.btn_more.setVisible(len(rows) >= self._limit)
         rows = self._filter_by_grade(rows)
         self._rows = rows
+        self.lbl_empty.setVisible(not rows)
+        if not rows:
+            has_any = bool(db.list_mistakes(limit=1, source=src, only_wrong=only_wrong))
+            self.lbl_empty.setText(
+                "이 조건에 맞는 실수가 없어요. 필터를 바꿔보세요."
+                if has_any
+                else "아직 쌓인 실수가 없어요. Stockfish 경로를 확인한 뒤 "
+                     "'사람전 분석'이나 '봇전 분석'을 눌러보세요."
+            )
         self.table.setRowCount(0)
         for r in rows:
             i = self.table.rowCount()
@@ -338,7 +352,12 @@ class MistakesTab(QWidget):
         for item in items:
             item["practice"] = item["id"] in self._previewed
         if not items:
-            QMessageBox.information(self, "내 실수 복습", "복습할 실수가 없습니다. 먼저 동기화/분석을 하세요.")
+            QMessageBox.information(
+                self,
+                "내 실수 복습",
+                "복습할 실수가 없어요. 홈의 '대국 가져오기'로 PGN을 읽고 "
+                "'사람전 분석'을 눌러보세요.",
+            )
             return
         cfg = self._cfg()
         dialog = ReviewDialog(
@@ -373,11 +392,11 @@ class MistakesTab(QWidget):
         self._worker = PipelineWorker(
             pipeline.analyze_mistakes, cfg=cfg, source=selected, auto_sync=True
         )
-        self._worker.message.connect(lambda m: self.lbl_stats.setText(m))
+        self._worker.message.connect(self.lbl_progress.setText)
         self._worker.progressed.connect(self._on_progress)
         self._worker.failed.connect(self._on_failed)
         self._worker.done.connect(self._on_analyzed)
-        self._worker.finished.connect(self._set_busy_finished)
+        self._worker.ended.connect(self._on_ended)
         self._worker.start()
 
     def _set_busy(self, busy: bool) -> None:
@@ -394,11 +413,15 @@ class MistakesTab(QWidget):
             self.bar.setRange(0, 1)
             self.bar.setValue(0)
             self.lbl_progress.setText("준비 중…")
-        else:
-            self.lbl_progress.setText("")
 
-    def _set_busy_finished(self) -> None:
+    def _on_ended(self, state: str) -> None:
         self._set_busy(False)
+        if state == "cancelled":
+            self.lbl_progress.setText("중단됨 — 분석이 멈췄어요.")
+        elif state == "failed":
+            self.lbl_progress.setText("분석이 실패했어요. 설정의 로그를 확인해보세요.")
+        else:
+            self.lbl_progress.clear()
 
     def _on_progress(self, done: int, total: int, message: str) -> None:
         if total > 0:
@@ -415,9 +438,7 @@ class MistakesTab(QWidget):
             self.lbl_progress.setText("중단 요청함…")
 
     def _on_failed(self, msg: str) -> None:
-        self._set_busy(False)
         QMessageBox.warning(self, "실수 분석", msg)
-        self.refresh()
 
     def _on_analyzed(self, result: dict) -> None:
         games = int(result.get("games", 0) or 0)
@@ -448,8 +469,8 @@ class MistakesTab(QWidget):
             )
         else:
             msg = (
-                "분석할 게임이 없다. 먼저 PGN 을 가져와야 한다.\n"
-                "'설정 → 로컬 동기화'로 폴더를 읽거나 'rclone 으로 받기'로 드라이브에서 받아라."
+                "분석할 게임이 없어요. 홈의 '대국 가져오기'로 PGN을 읽거나 "
+                "설정에서 드라이브 파일을 받아보세요."
             )
-        QMessageBox.information(self, "실수 분석", msg)
-        self.refresh()
+        self.lbl_stats.setText(msg.replace("\n", " "))
+        QTimer.singleShot(4000, self.refresh)

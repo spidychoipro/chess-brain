@@ -78,7 +78,7 @@ class SettingsTab(QWidget):
         drive_actions2.addStretch(1)
 
         drive_form = QFormLayout()
-        drive_form.addRow(theme.label("chess.com 아이디", role="muted"), self.in_username)
+        drive_form.addRow(theme.label("chess.com 아이디 (선택)", role="muted"), self.in_username)
         drive_form.addRow(theme.label("부모 폴더", role="muted"), self.in_parent)
         drive_form.addRow(theme.label("API 키", role="muted"), self.in_api_key)
         drive_form.addRow(theme.label("폴더 상태", role="muted"), self.lbl_folder)
@@ -114,7 +114,7 @@ class SettingsTab(QWidget):
             "또는 (2) Google Drive for Desktop 을 설치해 나타나는 로컬 경로를 여기 지정. "
             "둘 다 구글 인증(credentials.json)이 필요 없음."
         )
-        self.btn_local_sync = QPushButton("로컬 동기화")
+        self.btn_local_sync = QPushButton("대국 가져오기")
         self.btn_local_sync.setProperty("variant", "primary")
         self.btn_local_sync.clicked.connect(self._sync_local)
         self.btn_open_local = QPushButton("폴더 열기")
@@ -331,7 +331,12 @@ class SettingsTab(QWidget):
         self.scroll.ensureWidgetVisible(widget)
         widget.setFocus()
         widget.selectAll()
-        self._set_status("여기를 채운 뒤 '설정 저장'을 누르세요.", "accent")
+        note = (
+            "선택 항목이에요. 비워 두면 기본 색으로 내 수를 판별합니다."
+            if target == "username"
+            else "여기를 채운 뒤 '설정 저장'을 누르세요."
+        )
+        self._set_status(note, "accent")
 
     def refresh(self) -> None:
         """탭에 들어올 때마다 마운트 상태를 실제와 맞춘다."""
@@ -644,7 +649,7 @@ class SettingsTab(QWidget):
         self._run(
             self.btn_local_sync,
             pipeline.sync_local_folder,
-            "동기화 중…",
+            "대국 가져오는 중…",
             cfg=self.cfg,
         )
 

@@ -131,7 +131,9 @@ class MainWindow(QMainWindow):
 
     def _goto_import(self) -> None:
         self._navigate("settings")
-        self._page("settings")._sync_local()
+        settings = self._page("settings")
+        settings._set_status("대국 가져오기를 시작했어요. 결과는 아래 로그에 나와요.", "accent")
+        settings._sync_local()
 
     def _goto_setup(self, target: str) -> None:
         self._navigate("settings")

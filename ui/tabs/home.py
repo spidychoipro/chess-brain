@@ -95,21 +95,19 @@ class HomeTab(QWidget):
         setup.addWidget(theme.label("처음 시작하기", role="h2"))
         setup.addWidget(
             theme.label(
-                "아래 네 가지를 준비하면 복습과 분석이 바로 돼요. 끝난 항목은 초록으로 표시됩니다.",
+                "아래 세 가지만 준비하면 복습과 분석이 바로 돼요. 끝난 항목은 초록으로 표시됩니다.",
                 role="muted",
             )
         )
         self.btn_setup_pgn = QPushButton("폴더 선택")
-        self.btn_setup_user = QPushButton("아이디 입력")
         self.btn_setup_sf = QPushButton("찾아보기")
         self.btn_setup_import = QPushButton("가져오기")
-        for button in (self.btn_setup_pgn, self.btn_setup_user, self.btn_setup_sf, self.btn_setup_import):
+        for button in (self.btn_setup_pgn, self.btn_setup_sf, self.btn_setup_import):
             button.setProperty("variant", "ghost")
         self._setup_rows = [
             _step_row("1", "PGN 폴더 지정", self.btn_setup_pgn),
-            _step_row("2", "chess.com 아이디", self.btn_setup_user),
-            _step_row("3", "Stockfish 경로", self.btn_setup_sf),
-            _step_row("4", "대국 가져오기", self.btn_setup_import),
+            _step_row("2", "Stockfish 경로", self.btn_setup_sf),
+            _step_row("3", "대국 가져오기", self.btn_setup_import),
         ]
         for row in self._setup_rows:
             setup.addWidget(row)
@@ -134,7 +132,6 @@ class HomeTab(QWidget):
         self.btn_bot.clicked.connect(lambda: self.analyze.emit("bot"))
         self.btn_all.clicked.connect(lambda: self.analyze.emit("both"))
         self.btn_setup_pgn.clicked.connect(lambda: self.openSetup.emit("pgn"))
-        self.btn_setup_user.clicked.connect(lambda: self.openSetup.emit("username"))
         self.btn_setup_sf.clicked.connect(lambda: self.openSetup.emit("stockfish"))
         self.btn_setup_import.clicked.connect(self.openImport.emit)
 
@@ -152,10 +149,10 @@ class HomeTab(QWidget):
         self._set_number(self.card_today, str(today["total"]))
 
         if not games["total"]:
-            self.lbl_now.setText("아직 가져온 대국이 없어요. PGN 폴더를 지정하고 대국부터 가져오세요.")
+            self.lbl_now.setText("아직 가져온 대국이 없어요. '대국 가져오기'부터 눌러보세요.")
             theme.set_state(self.lbl_now, "accent")
         elif mc["due"]:
-            self.lbl_now.setText(f"복습할 실수 {mc['due']}개가 있어요. 위의 '복습 시작'을 눌러보세요.")
+            self.lbl_now.setText(f"복습할 실수 {mc['due']}개가 있어요. '복습 시작'을 눌러보세요.")
             theme.set_state(self.lbl_now, "accent")
         elif mc["unreviewed"]:
             self.lbl_now.setText(f"새 실수 {mc['unreviewed']}개가 쌓였어요. 한 번 풀어보세요.")
@@ -166,11 +163,10 @@ class HomeTab(QWidget):
 
         steps = {
             "pgn": bool(cfg_mod.get(cfg, "local.pgn_folder", "") or ""),
-            "username": bool(cfg_mod.get(cfg, "chesscom.username", "") or ""),
             "stockfish": bool(cfg_mod.get(cfg, "stockfish.path", "") or ""),
             "import": games["total"] > 0,
         }
-        for row, key in zip(self._setup_rows, ("pgn", "username", "stockfish", "import")):
+        for row, key in zip(self._setup_rows, ("pgn", "stockfish", "import")):
             is_done = steps[key]
             row.mark.setText("✓" if is_done else row.number)
             theme.set_state(row.mark, "success" if is_done else "")
@@ -180,8 +176,8 @@ class HomeTab(QWidget):
 
         if not games["total"]:
             self.lbl_empty.setText(
-                "빈 화면처럼 보인다면 아직 대국을 읽지 않은 거예요. "
-                "'설정'의 로컬 PGN 폴더를 지정한 뒤 '대국 가져오기'를 눌러보세요."
+                "PGN 폴더가 지정돼 있으면 가져오기만 눌러도 대국이 채워져요. "
+                "경로는 '설정'에서 확인할 수 있어요."
             )
             self.lbl_empty.show()
         elif not mc["total"] and not pc["total"]:

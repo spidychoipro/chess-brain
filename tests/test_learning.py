@@ -269,6 +269,30 @@ class LearningTests(unittest.TestCase):
         self.assertEqual(tab.bar.value(), 2)
         self.assertIn('분석 중', tab.lbl_progress.text())
 
+    def test_ux_checklist_and_progress_feedback(self):
+        from ui.tabs.home import HomeTab
+        from ui.tabs.mistakes import MistakesTab
+        from ui.worker import PipelineWorker
+
+        home = HomeTab()
+        self.widgets.append(home)
+        self.assertEqual(len(home._setup_rows), 3)
+        self.assertFalse(hasattr(home, "btn_setup_user"))
+        self.assertNotIn("위의", home.lbl_now.text())
+
+        tab = MistakesTab()
+        self.widgets.append(tab)
+        self.assertEqual(tab.bar.format(), "%p%")
+        self.assertIsNotNone(tab.lbl_empty)
+        tab._on_progress(2, 5, "분석 중")
+        self.assertEqual(tab.bar.value(), 2)
+        tab._on_ended("cancelled")
+        self.assertIn("중단됨", tab.lbl_progress.text())
+        self.assertFalse(tab.progress_box.isVisible())
+
+        worker = PipelineWorker(lambda on_progress: {})
+        self.assertTrue(hasattr(worker, "ended"))
+
     def test_selecting_a_future_mistake_is_practice(self):
         from ui.tabs.mistakes import MistakesTab
         mid = self.mistake()

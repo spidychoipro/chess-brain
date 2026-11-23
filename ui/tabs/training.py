@@ -31,7 +31,7 @@ class TrainingTab(QWidget):
         self.cb_mode = QComboBox()
         self.cb_mode.addItem("다음 수 맞추기 (Recall)", "recall")
         self.cb_mode.addItem("실수 집중 훈련 (Drill)", "drill")
-        self.cb_mode.addItem("노테이션 배우기 (기초부터)", "notation")
+        self.cb_mode.addItem("기보 읽기 배우기 (기초부터)", "notation")
 
         self.cb_source = QComboBox()
         self.cb_source.addItem("사람", "human")
