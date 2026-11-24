@@ -1,112 +1,125 @@
-<img src="https://raw.githubusercontent.com/spidychoipro/chess-brain/main/assets/chess-brain.svg" width="84" alt="chess-brain">
+<p align="center">
+  <img src="https://raw.githubusercontent.com/spidychoipro/chess-brain/main/assets/chess-brain.svg" width="92" alt="chess-brain">
+</p>
 
-# chess-brain
+<h1 align="center">chess-brain</h1>
 
-![Python 3.15.2](https://img.shields.io/badge/Python-3.15.2-3776ab?logo=python&logoColor=white)
-![tests 67 passing](https://img.shields.io/badge/tests-67%20passing-brightgreen)
-![Stockfish GPLv3](https://img.shields.io/badge/engine-Stockfish%20sf__19%20GPLv3-orange)
+<p align="center"><em>내 실수만 다시 푸는 체스 훈련 앱</em></p>
 
-내가 둔 체스 대국에서 **실수만 골라서 다시 풀게 해주는** 앱입니다.
-
-기보를 몰라도 괜찮습니다. 보드에서 기물을 클릭하면 수가 두어집니다. 틀린 이유도 사람 말로 알려줍니다. 돈도 안 들고, 인터넷 없이도 돌아갑니다.
+<p align="center">
+  <img alt="Python 3.15.2" src="https://img.shields.io/badge/Python-3.15.2-3776ab?logo=python&logoColor=white">
+  <img alt="tests 67 passing" src="https://img.shields.io/badge/tests-67%20passing-brightgreen">
+  <img alt="Stockfish sf_19 GPLv3" src="https://img.shields.io/badge/engine-Stockfish%20sf__19%20GPLv3-orange">
+  <img alt="release" src="https://img.shields.io/github/v/release/spidychoipro/chess-brain.svg">
+</p>
 
 ---
 
-## 이걸로 뭐 하나요?
+## 왜 chess-brain인가?
 
-- 내 대국을 읽어서 "여기서 손해 봤다"는 수만 골라줍니다.
-- 그 수에 메이트 놓침, 백 랭크, 기물 걸림 같은 이름을 붙이고 왜 틀렸는지 설명합니다.
-- 약한 부분에서 문제를 골라줍니다. 맞히면 며칠 뒤에, 자꾸 틀리면 더 자주 다시 나옵니다.
+대국은 쌓이는데 같은 실수가 계속 나온다. 기보를 처음부터 다시 보는 건 오래 걸리고, 뭘 연습해야 할지도 잡히지 않는다. chess-brain은 내 대국에서 **손해 본 수만** 뽑아서 이름을 붙이고, 잊기 직전에 다시 풀게 한다.
 
-외우려고 푸는 게 아니라, **같은 실수를 안 하게 되는 쪽**에 목적이 있습니다.
+- **실수만 남긴다** — Stockfish가 수마다 손실을 재고, 기준을 넘는 수만 모은다.
+- **왜 틀렸는지 설명한다** — 메이트 놓침, 백 랭크, 기물 걸림 같은 테마를 붙이고 사람 말로 해설을 달아준다.
+- **약한 데서 문제를 낸다** — 정답률이 낮은 테마에서 오늘의 10문제를 골라준다.
+- **잊기 직전에 다시 만난다** — 맞히면 간격을 늘리고, 자꾸 틀리면 10분 뒤에 다시 내놓는다.
+- **전부 로컬에서 돌아간다** — 기록은 SQLite, 분석은 번들 Stockfish. 로그인도 결제도 없다.
 
-## 하루에 이렇게 쓰면 돼요
+## 시작하기
 
-1. 홈에서 **대국 가져오기**를 누릅니다. chess.com 계정을 연결해도 되고, PGN 파일이 든 폴더를 골라도 됩니다.
-2. **분석**을 누르면 엔진이 실수를 뽑아줍니다. 잠깐 걸립니다.
-3. 왼쪽에서 **훈련 커리큘럼**을 열고 **오늘의 추천 10문제**를 누릅니다.
+### exe로 쓰기
 
-끝입니다. 다음 날엔 복습할 게 알아서 떠 있습니다.
+[릴리스 페이지](https://github.com/spidychoipro/chess-brain/releases)에서 zip을 받아 아무 폴더에 풀고 `chess-brain.exe`를 더블클릭하면 끝이다. 설치 프로그램은 없다.
 
-## 설치
+zip 안에는 `chess-brain.exe`, `_internal\`, `engines\`가 들어 있다. 내 기록인 `config\`와 `data\`는 안 들어가니까, 쓰던 폴더에서 두 폴더를 같이 옮기면 그대로 이어진다.
 
-### 제일 쉬운 방법
+### 소스에서 직접 쓰기
 
-[릴리스 페이지](https://github.com/spidychoipro/chess-brain/releases)에서 zip을 받아서 아무 폴더에 풀고 `chess-brain.exe`를 더블클릭하면 됩니다. 설치 프로그램은 없습니다.
-
-zip 안에는 exe와 엔진이 들어 있습니다. 내 기록은 zip에 없으니까, 예전에 쓰던 `config`와 `data` 폴더를 새 폴더로 같이 옮기면 그대로 이어집니다.
-
-<details>
-<summary>소스에서 직접 설치하고 싶다면</summary>
-
-관리자 권한도, exe도 필요 없습니다.
-
-**1. 소스 받기**
-
-GitHub에서 **Code → Download ZIP** 을 눌러 풀거나 `git clone https://github.com/spidychoipro/chess-brain.git` 을 실행합니다.
-
-**2. 파이썬 준비**
-
-Python 3.10 이상을 설치한 뒤, 그 폴더에서 이렇게 칩니다.
+exe 없이 소스만 받아 돌리는 방법이다. 관리자 권한도 필요 없다.
 
 ```powershell
+git clone https://github.com/spidychoipro/chess-brain.git
+cd chess-brain
 py -3.15 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
-
-**3. 엔진 넣기**
-
-[Stockfish sf_19](https://github.com/official-stockfish/Stockfish/releases/tag/sf_19) 페이지에서 `stockfish-windows-x86-64-universal.zip`을 받아, 안의 exe를 `engines\stockfish\`에 넣습니다. 같은 페이지의 `Source code (zip)`도 받아서 `Copying.txt`와 `src\`를 같이 넣어주면 더 좋습니다(GPLv3 때문).
-
-귀찮으면 `powershell -ExecutionPolicy Bypass -File .\fetch-stockfish.ps1` 한 줄로 자동으로 됩니다.
-
-**4. 실행**
-
-```powershell
+powershell -ExecutionPolicy Bypass -File .\fetch-stockfish.ps1
 python main.py
 ```
 
-처음 켜면 `config\config.json`과 `data\app.db`가 저절로 생깁니다. 설정에서 PGN 폴더만 지정하면 끝입니다. 엔진은 위 경로를 자동으로 찾고, 못 찾으면 `config.json`의 `stockfish.path`에 exe 경로를 적으면 됩니다.
+`fetch-stockfish.ps1`은 공식 sf_19 바이너리와 GPLv3 소스를 `engines\stockfish\`에 넣는다. 직접 넣으려면 [Stockfish sf_19 릴리스](https://github.com/official-stockfish/Stockfish/releases/tag/sf_19)에서 `stockfish-windows-x86-64-universal.zip` 안의 exe를 `engines\stockfish\`에, `Source code (zip)`의 `Copying.txt`와 `src\`를 같은 폴더에 넣으면 된다.
 
-나중에 업데이트할 땐 소스만 새 것으로 바꾸면 됩니다. `config`와 `data`는 그대로 두세요.
+처음 실행하면 `config\config.json`과 `data\app.db`가 저절로 생긴다. 설정에서 PGN 폴더만 지정하면 쓸 수 있다. 엔진을 못 찾으면 `config.json`에 경로를 적는다.
 
-</details>
+```json
+{
+  "stockfish": { "path": "C:\\path\\to\\stockfish.exe" },
+  "local": { "pgn_folder": "C:\\path\\to\\my-pgns" }
+}
+```
 
-## 화면은 이렇게 생겼습니다
+나중에 업데이트할 땐 소스만 새 것으로 갈아끼우면 된다. `config\`와 `data\`는 그대로 두면 된다.
 
-- **홈** — 오늘 할 일과 요약. 여기서 대국 가져오기, 분석, 복습을 바로 시작합니다.
-- **내 실수** — 실수 목록과 보드가 나란히 있습니다. 행을 누르면 그 국면이 떠서 직접 다시 둘 수 있습니다.
-- **기보 트레이닝** — 내가 둔 수 재현하기, 복습하기, 기보 읽는 법 처음부터 배우기.
-- **훈련 커리큘럼** — 테마별로 어디가 약한지 보고, 거기서 문제를 골라풉니다.
-- **기록/통계** — 최근 정답률과 자주 틀리는 패턴. 사람전과 봇전을 나눠서 봅니다.
-- **설정** — 폴더, 엔진, 백업, 업데이트 확인.
+## 쓰는 법
 
-## 자주 묻는 것
+1. 홈에서 **대국 가져오기**를 누른다. chess.com에서 받아도 되고 PGN 파일이 든 폴더를 골라도 된다. 폴더 아래에 `Human\`과 `Bot\`을 두면 사람전과 봇전으로 나뉜다.
+2. **분석**을 누르면 엔진이 손실을 재고 실수를 모은다. 진행률이 나오고 도중에 멈출 수도 있다.
+3. 왼쪽에서 **훈련 커리큘럼 → 오늘의 추천 10문제**를 연다. 보드에서 기물을 클릭해서 수를 두고, 모르겠으면 **모르겠음**을 눌러 정답을 본다.
 
-**기보를 하나도 모르는데 쓸 수 있나요?**
-네. 수를 타이핑하는 게 아니라 보드에서 기물을 누르면 됩니다. "기보 읽기 배우기" 모드도 따로 있습니다.
+다음 날엔 복습할 문제가 알아서 떠 있다.
 
-**인터넷이 꼭 필요한가요?**
-아니요. 평소엔 전부 오프라인으로 됩니다. 인터넷 쓰는 건 업데이트 확인, chess.com에서 대국 받아오기, 드라이브 연결 정도이고 전부 직접 누를 때만 연결합니다.
+## 화면
 
-**봇 게임도 다 가져오나요?**
-네. 사람전이든 봇전이든 몇 판을 두든 과거 전부 받아옵니다.
+| 화면 | 하는 일 |
+| --- | --- |
+| 홈 | 오늘 할 일, 요약, 가져오기·분석·복습 버튼 |
+| 내 실수 | 실수 목록 + 보드. 등급·소스 필터, 국면 다시 두기 |
+| 기보 트레이닝 | 내가 둔 수 재현, 복습, 기보 읽기 4단계 |
+| 훈련 커리큘럼 | 테마별 약점, 추천 문제, 재발 추적 |
+| 기록/통계 | 최근 정답률과 자주 틀리는 패턴. 사람전/봇전 분리 |
+| 설정 | 폴더, 엔진, 백업, 업데이트 확인 |
 
-**이미 크게 지고 있는 국면도 나오나요?**
-아니요. 거기선 무슨 수를 둬도 결과가 같아서 외울 게 없습니다. 그런 카드는 빼고, DB에는 그대로 남겨둡니다.
+기보를 못 읽어도 된다. 수를 타이핑하는 게 아니라 보드에서 기물을 누르면 된다. 틀리면 빨간 표시가 뜨고, 정답은 **모르겠음**을 누를 때만 공개된다.
 
-**기록이 사라질까 봐 걱정됩니다.**
-앱을 켤 때마다 `data\backups\`에 사본을 남깁니다. 설정의 **백업 폴더 열기**에서 바로 볼 수 있습니다. 빌드할 때도 프로젝트 `backups\`에 통째로 복사해둡니다.
+## 훈련 커리큘럼
 
-**돈은 안 드나요?**
-안 듭니다. 엔진도 공식 Stockfish를 같이 넣어둔 거라 과금 API가 없습니다. 유료 서비스 주소가 코드에 들어오면 테스트가 먼저 실패하도록 막아뒀습니다.
+테마는 엔진 결과에서 자동으로 붙는다. 메이트 놓침, 메이트 당함, 백 랭크, 기물 걸림, 잡을 수 놓침, 포크·더블어택, 핀·묶임, 오프닝 판단, 엔드게임, 위치 판단, 전술 미스.
 
-<details>
-<summary>개발자용 메모</summary>
+해설은 이런 식으로 붙는다.
 
-소스 실행은 `python main.py`, 테스트는 `python -m unittest discover -s tests -v` (67개 통과)입니다. exe로 만들려면 `fetch-stockfish.ps1`로 엔진을 받은 뒤 `build.ps1`을 돌리면 됩니다. 빌드는 설정과 DB를 백업해두고 되돌립니다.
+> `Rg4`을 두면 상대가 `Rxd4`로 룩을 잡습니다. `Rfd1`가 정답입니다.
 
-코드는 `core/`(수집·분석·저장·커리큘럼), `ui/`(화면), `tests/`로 나뉘어 있습니다.
+커리큘럼 화면에서 테마별 실수 수, 복습 예정, 정답률, 최근 4주 재발을 본다. 테마를 골라 집중 훈련도 할 수 있다.
 
-</details>
+이미 4점 이상 지고 있거나 메이트당하기 직전인 국면은 카드에서 빠진다. 거기선 무슨 수를 둬도 결과가 같아서 외울 게 없다. DB에는 그대로 남아 있고, `mistakes.skip_lost_positions`를 `false`로 바꾸면 다시 나온다.
+
+## 대국 가져오기
+
+앱은 결국 로컬 폴더를 읽는다.
+
+| 경로 | 필요한 것 |
+| --- | --- |
+| 로컬 PGN 폴더 | 폴더 지정만 하면 됨 |
+| rclone | rclone 설치 + 원격 경로. 앱은 키를 갖지 않음 |
+| 구글드라이브 | 공유 링크 + API 키 또는 credentials.json |
+
+chess.com 자동 수집도 켜져 있다. 앱을 켜면 사람전·봇전 가리지 않고 아직 안 받은 과거 게임을 전부 훑는다. 30판이든 300판이든 달 단위로 몰아서 받으니 판 수가 요청 횟수에 영향을 주지 않는다. 실행 중에는 10분마다 최근 7일만 가볍게 확인한다. 수집 로그는 화면과 `data\chesscom-sync.log`에 남고, 설정에서 자동 수집을 끌 수 있다.
+
+평소 학습과 분석은 오프라인으로 된다. 인터넷을 쓰는 건 업데이트 확인, chess.com 수집, 드라이브 연결 정도이고 전부 직접 누를 때만 연결한다. 업데이트 확인은 GitHub 태그를 조회해서 새 버전이 있으면 릴리스 페이지를 알려준다.
+
+## 기록 보관
+
+앱을 켤 때마다 `data\backups\`에 DB와 설정 사본을 남기고 최근 5개를 유지한다. 빌드할 때는 프로젝트의 `backups\build-<날짜>\`에 `config\`와 `data\`를 통째로 복사해둔다. 스키마가 바뀌어도 기존 DB는 초기화하지 않고 컬럼을 추가한다.
+
+## 코드 구조
+
+```
+main.py                 진입점 (--selftest)
+core/                   chesscom 수집, 파싱, 엔진 분석, 커리큘럼, SQLite, 간격반복
+ui/                     메인 창, 보드, 테마, 여섯 개 탭
+assets/chess-brain.svg  로고
+tests/                  unittest 67개
+docs/learning-upgrade.md 학습 규칙 변경 기록
+```
+
+엔진은 공식 Stockfish sf_19(GPLv3)를 번들한다. `engines\stockfish\`에 exe와 `Copying.txt`, `src\`가 함께 들어간다. 소스 빌드는 `fetch-stockfish.ps1`로 엔진을 받은 뒤 `build.ps1`을 돌리면 되고, 빌드는 설정과 DB를 백업한 뒤 되돌린다. 테스트는 `python -m unittest discover -s tests -v`로 돌린다.
