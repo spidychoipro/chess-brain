@@ -265,8 +265,14 @@ def find_mistake(
     threshold: float = 0.80,
     depth: int = 12,
     engine: Optional[Stockfish] = None,
+    skip_lost: bool = True,
 ) -> Optional[MistakeResult]:
-    """Return a MistakeResult when my move lost >= threshold pawns."""
+    """Return a MistakeResult when my move lost >= threshold pawns.
+
+    ``skip_lost`` 가 켜지면 이미 4점 이상 지고 있거나 메이트당하기 직전인
+    국면은 건너뛴다. 거기선 무슨 수를 둬도 갈라지지 않아서 복습 카드가
+    될 수 없고, 연습 시간만 잡아먹는다.
+    """
     board = chess.Board(fen_before)
     try:
         move = chess.Move.from_uci(played_uci)
@@ -287,10 +293,12 @@ def find_mistake(
         before = candidates[0]
         sign = 1.0 if board.turn == chess.WHITE else -1.0
         score_before = before["pawns_white"] * sign
+        mate_before = before["info"]["score"].pov(board.turn).mate()
+        if skip_lost and (score_before <= -4.0 or (mate_before is not None and mate_before < 0)):
+            return None
 
         my_san = board.san(move)
         best_san = before["best_san"]
-        mate_before = before["info"]["score"].pov(board.turn).mate()
         accepted = []
         for candidate in candidates:
             mate = candidate["info"]["score"].pov(board.turn).mate()

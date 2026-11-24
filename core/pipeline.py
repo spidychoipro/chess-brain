@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 import chess
 
 from core import config as cfg_mod
-from core import db, drive, engine as engine_mod, parser
+from core import curriculum, db, drive, engine as engine_mod, parser
 
 Progress = Optional[Callable[[str], None]]
 
@@ -513,6 +513,7 @@ def analyze_mistakes(
     if depth != raw_depth:
         _note(on_progress, f"depth {raw_depth} → {depth} 로 조정(너무 깊으면 안 끝남).")
     threshold = float(cfg_mod.get(cfg, "mistakes.loss_threshold", 0.80) or 0.80)
+    skip_lost = bool(cfg_mod.get(cfg, "mistakes.skip_lost_positions", True))
     threads = int(cfg_mod.get(cfg, "stockfish.threads", 0) or 0)
     hash_mb = int(cfg_mod.get(cfg, "stockfish.hash_mb", 256) or 256)
 
@@ -616,9 +617,18 @@ def analyze_mistakes(
                         threshold=threshold,
                         depth=depth,
                         engine=sf,
+                        skip_lost=skip_lost,
                     )
                     if res is None:
                         continue
+                    item = {
+                        "fen": ln.fen_before, "ply": ln.ply,
+                        "best_san": res.best_san, "my_san": res.my_san,
+                        "reply_san": res.reply_san, "loss": res.loss,
+                        "mate_before": res.mate_before, "mate_after": res.mate_after,
+                        "best_line": res.best_line, "reply_line": res.reply_line,
+                    }
+                    theme = curriculum.classify(item)
                     mid = db.add_mistake(
                         fen=ln.fen_before,
                         context_sans=ln.context_sans,
@@ -636,6 +646,8 @@ def analyze_mistakes(
                         reply_line=res.reply_line,
                         mate_before=res.mate_before,
                         mate_after=res.mate_after,
+                        theme=theme,
+                        explanation=curriculum.explain(item, theme),
                     )
                     stats["mistakes"] += 0 if mid == 0 else 1
                     if mid and res.best_san:

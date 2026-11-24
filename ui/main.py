@@ -26,6 +26,7 @@ PAGES = [
     ("홈", "home"),
     ("내 실수", "mistakes"),
     ("기보 트레이닝", "training"),
+    ("훈련 커리큘럼", "curriculum"),
     ("기록/통계", "stats"),
     ("설정", "settings"),
 ]
@@ -34,12 +35,14 @@ ICON_KEYS = {
     "home": "home",
     "mistakes": "mistakes",
     "training": "training",
+    "curriculum": "curriculum",
     "stats": "stats",
     "settings": "settings",
 }
 
 # 탭 클래스는 첫 방문 때 만들어서 시작 부하를 줄인다.
 def _tab_classes():
+    from ui.tabs.curriculum import CurriculumTab
     from ui.tabs.home import HomeTab
     from ui.tabs.mistakes import MistakesTab
     from ui.tabs.settings import SettingsTab
@@ -49,6 +52,7 @@ def _tab_classes():
     return {
         "mistakes": MistakesTab,
         "training": TrainingTab,
+        "curriculum": CurriculumTab,
         "home": HomeTab,
         "stats": StatsTab,
         "settings": SettingsTab,
@@ -59,6 +63,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("chess-brain")
+        self.setWindowIcon(theme.icon("logo", theme.ACCENT))
         self.resize(1080, 680)
         self._pages = {}
 

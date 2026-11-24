@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="chess-brain">
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#1c1f24" stroke="#5b8cff" stroke-width="3"/>
+  <path fill="#5b8cff" d="M17 51V24l11 6 4-18 15 12-6 27z"/>
+  <circle cx="35" cy="21" r="2.5" fill="#0f1115"/>
+  <path d="M14 55h36" stroke="#5b8cff" stroke-width="3" stroke-linecap="round" opacity=".6"/>
+</svg>

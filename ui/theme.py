@@ -311,6 +311,16 @@ _ICON_SVG = {
         "<path fill='{c}' d='M5 20V9l5 2 2-7 7 5-4 11z'/>"
         "<circle cx='10' cy='8' r='1' fill='{BG}'/>"
     ),
+    "curriculum": (
+        "<path fill='{c}' d='M4 4h7a3 3 0 0 1 3 3v13a3 3 0 0 0-3-2H4z'/>"
+        "<path fill='{c}' d='M20 4h-3a3 3 0 0 0-3 3v13a3 3 0 0 1 3-2h3z'/>"
+    ),
+    "logo": (
+        "<rect x='1' y='1' width='22' height='22' rx='5' fill='{SURFACE}' "
+        "stroke='{c}' stroke-width='1.5'/>"
+        "<path fill='{c}' d='M6.5 18V9l4 2 1.5-6L17.5 9l-2 9z'/>"
+        "<circle cx='12' cy='8' r='0.9' fill='{BG}'/>"
+    ),
     "stats": (
         "<rect x='4' y='12' width='3' height='8' rx='1' fill='{c}'/>"
         "<rect x='10' y='7' width='3' height='13' rx='1' fill='{c}'/>"

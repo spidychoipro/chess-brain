@@ -50,6 +50,7 @@ DEFAULTS: Dict[str, Any] = {
     },
     "mistakes": {
         "loss_threshold": 0.80,  # pawn 단위 손실 임계값
+        "skip_lost_positions": True,  # 이미 4점 이상 진 국면은 실수 카드로 만들지 않음
         "source": "human",       # 실수 분석 기본 소스
     },
     "training": {
