@@ -12,6 +12,20 @@ from __future__ import annotations
 import sys
 
 
+def _set_app_identity() -> None:
+    """Windows 작업표시줄에서 이 앱을 자기 아이콘/ID로 묶는다."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "spidychoipro.chess-brain"
+        )
+    except Exception:
+        pass
+
+
 def _timing():
     """Env-guarded phase logger (CHESS_BRAIN_TIMING=1 로 켬).
 
@@ -129,8 +143,10 @@ def main() -> int:
     if log:
         log("db-init")
 
+    _set_app_identity()
     app = QApplication(sys.argv)
     app.setApplicationName("chess-brain")
+    app.setWindowIcon(theme.icon("logo", theme.ACCENT))
     theme.apply(app)
     window = MainWindow()
     if log:
