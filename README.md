@@ -2,6 +2,10 @@
 
 # chess-brain
 
+![Python 3.15.2](https://img.shields.io/badge/Python-3.15.2-3776ab?logo=python&logoColor=white)
+![tests 67 passing](https://img.shields.io/badge/tests-67%20passing-brightgreen)
+![Stockfish GPLv3](https://img.shields.io/badge/engine-Stockfish%20sf__19%20GPLv3-orange)
+
 내가 둔 체스 대국에서 **실수만 골라서 다시 풀게 해주는** 앱입니다.
 
 기보를 몰라도 괜찮습니다. 보드에서 기물을 클릭하면 수가 두어집니다. 틀린 이유도 사람 말로 알려줍니다. 돈도 안 들고, 인터넷 없이도 돌아갑니다.
