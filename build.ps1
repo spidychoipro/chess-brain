@@ -12,6 +12,17 @@ $OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $py = "C:\Users\swpar\AppData\Local\Programs\Python\Python315\python.exe"
 if (-not (Test-Path $py)) { $py = "python" }
 
+# 3.15 환경에 패키지가 아직 없으면 3.14 site-packages 를 빌려 쓴다.
+# PySide6 는 cp310-abi3, python-chess 는 순수 파이썬이라 버전이 섞여도 동작한다.
+$fallback = "C:\Users\swpar\AppData\Local\Programs\Python\Python314\Lib\site-packages"
+& $py -c "import chess, PySide6, PyInstaller" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    if (Test-Path $fallback) {
+        Write-Host "== 3.15 패키지 없음 — 3.14 site-packages 사용 =="
+        $env:PYTHONPATH = $fallback + [IO.Path]::PathSeparator + $env:PYTHONPATH
+    }
+}
+
 Push-Location (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
 $out = "dist\chess-brain"
@@ -33,9 +44,14 @@ if ($saved.Count -gt 0) {
     Write-Host "== 설정/DB 백업: $keep =="
 }
 
-Write-Host "== PyInstaller 설치 =="
-& $py -m pip install --upgrade pyinstaller
-if ($LASTEXITCODE -ne 0) { throw "pyinstaller 설치 실패" }
+& $py -c "import PyInstaller" 2>$null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "== PyInstaller 이미 있음 — 설치 건너뜀 =="
+} else {
+    Write-Host "== PyInstaller 설치 =="
+    & $py -m pip install --upgrade pyinstaller
+    if ($LASTEXITCODE -ne 0) { throw "pyinstaller 설치 실패" }
+}
 
 $restore = {
     foreach ($sub in @("config", "data")) {
