@@ -242,6 +242,14 @@ class ReviewPanel(QWidget):
         if self.item_type != "mistake":
             return "실제 기보의 지정 수를 재현하는 연습입니다." if item.get("origin") == "line" else "실수 분석에서 찾은 추천 수입니다."
         text = f"내 수 {item.get('my_san') or '?'} · {loss_label(item)}"
+        from core import curriculum
+
+        theme_key = item.get("theme") or ""
+        if theme_key:
+            text += f"\n테마: {curriculum.THEMES.get(theme_key, theme_key)}"
+        explanation = (item.get("explanation") or "").strip()
+        if explanation:
+            text += f"\n{explanation}"
         reply = item.get("reply_san")
         if reply and reply != "-":
             text += f"\n상대는 {reply}로 응수할 수 있었습니다. 아래에서 보드로 확인하세요."

@@ -9,7 +9,7 @@
 $ErrorActionPreference = "Stop"
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$py = "C:\Users\swpar\AppData\Local\Programs\Python\Python314\python.exe"
+$py = "C:\Users\swpar\AppData\Local\Programs\Python\Python315\python.exe"
 if (-not (Test-Path $py)) { $py = "python" }
 
 Push-Location (Split-Path -Parent $MyInvocation.MyCommand.Path)

@@ -57,7 +57,11 @@ CREATE TABLE IF NOT EXISTS mistakes (
     reps INTEGER DEFAULT 0,
     lapses INTEGER DEFAULT 0,
     due_at INTEGER DEFAULT 0,
-    reviewed_at INTEGER DEFAULT 0
+    reviewed_at INTEGER DEFAULT 0,
+    theme TEXT DEFAULT '',
+    explanation TEXT DEFAULT '',
+    created_at INTEGER DEFAULT 0,
+    excluded INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS problems (
@@ -137,6 +141,10 @@ def init_db() -> None:
         conn.commit()
     finally:
         conn.close()
+    # 옛 실수에도 테마/해설을 붙인다. 엔진을 다시 돌리지 않아서 금방 끝난다.
+    from core import curriculum
+
+    curriculum.backfill()
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -146,9 +154,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "reply_san": "TEXT DEFAULT ''", "accepted_sans": "TEXT DEFAULT '[]'",
         "best_line": "TEXT DEFAULT '[]'", "reply_line": "TEXT DEFAULT '[]'",
         "mate_before": "INTEGER", "mate_after": "INTEGER",
+        "theme": "TEXT DEFAULT ''", "explanation": "TEXT DEFAULT ''",
+        "created_at": "INTEGER DEFAULT 0", "excluded": "INTEGER DEFAULT 0",
     }.items():
         if name not in cols:
             conn.execute(f"ALTER TABLE mistakes ADD COLUMN {name} {definition}")
+    # 인덱스는 컬럼 추가 뒤에 만들어야 옛 DB 에서도 문제가 안 생긴다.
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_mistakes_theme ON mistakes(theme)")
 
 
 def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
@@ -366,11 +378,26 @@ def add_mistake(
     reply_line: Optional[List[str]] = None,
     mate_before: Optional[int] = None,
     mate_after: Optional[int] = None,
+    theme: str = "",
+    explanation: str = "",
 ) -> int:
     """Insert a mistake, or return the id of the existing identical one."""
     # 최선수를 그대로 둔 수는 실수가 아니다(가짜 실수 방지).
     if my_san and my_san == best_san:
         return 0
+    # 분류를 안 넘겨도 여기서 채운다. 옛 코드/스크립트가 add_mistake를 직접
+    # 불러도 커리큘럼에서 빠지는 실수가 없게 하려는 것.
+    from core import curriculum
+
+    raw = {
+        "fen": fen, "ply": ply, "my_san": my_san, "best_san": best_san,
+        "reply_san": reply_san, "loss": loss, "mate_before": mate_before,
+        "mate_after": mate_after, "best_line": best_line or [],
+        "reply_line": reply_line or [], "eval_before": eval_before,
+    }
+    theme = theme or curriculum.classify(raw)
+    explanation = explanation or curriculum.explain(raw, theme)
+    excluded = 1 if curriculum.is_lost_position(raw) else 0
     conn = connect()
     try:
         cur = conn.execute(
@@ -378,8 +405,9 @@ def add_mistake(
             INSERT OR IGNORE INTO mistakes (
                 fen, context_sans, my_san, best_san, reply_san, eval_before,
                 eval_after, loss, source_game_id, source, ply,
-                ease, interval, reps, lapses, due_at, reviewed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2.5, 0.0, 0, 0, 0, 0)
+                ease, interval, reps, lapses, due_at, reviewed_at,
+                theme, explanation, created_at, excluded
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2.5, 0.0, 0, 0, 0, 0, ?, ?, ?, ?)
             """,
             (
                 fen,
@@ -393,6 +421,10 @@ def add_mistake(
                 source_game_id or "",
                 source,
                 int(ply),
+                theme or "",
+                explanation or "",
+                now_ts(),
+                excluded,
             ),
         )
         mid = cur.lastrowid
@@ -406,11 +438,15 @@ def add_mistake(
                 (fen, source_game_id or "", my_san or "", int(ply)),
             ).fetchone()
             mid = row["id"] if row else 0
-        if mid and accepted_sans is not None:
+        if mid:
             conn.execute("UPDATE mistakes SET accepted_sans=?, best_line=?, reply_line=?, "
-                         "mate_before=?, mate_after=? WHERE id=?",
-                         (json.dumps(accepted_sans), json.dumps(best_line or []),
-                          json.dumps(reply_line or []), mate_before, mate_after, mid))
+                         "mate_before=?, mate_after=?, "
+                         "theme=CASE WHEN COALESCE(theme,'')='' THEN ? ELSE theme END, "
+                         "explanation=CASE WHEN COALESCE(explanation,'')='' THEN ? ELSE explanation END, "
+                         "excluded=? WHERE id=?",
+                         (json.dumps(accepted_sans or []), json.dumps(best_line or []),
+                          json.dumps(reply_line or []), mate_before, mate_after,
+                          theme or "", explanation or "", excluded, mid))
         conn.commit()
         return int(mid)
     finally:
@@ -464,6 +500,7 @@ def mistakes_due(
     source: Optional[str] = None,
     only_wrong: bool = False,
     grade: Optional[str] = None,
+    theme: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     now = now_ts()
     where = ["(due_at=0 OR due_at<=?)"]
@@ -477,6 +514,9 @@ def mistakes_due(
     if source in ("bot", "human"):
         where.append("source=?")
         params.append(source)
+    if theme:
+        where.append("theme=?")
+        params.append(theme)
     if only_wrong:
         where.append("wrong >= 1")
     clause = ("WHERE " + " AND ".join(where)) if where else ""
