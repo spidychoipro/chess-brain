@@ -230,6 +230,37 @@ class MasteryBar(QWidget):
             self.lbl.setText(self.lbl.text() + f"\n기물별 양방향 학습 {covered}/12 완료 필요")
 
 
+class _FittingStack(QStackedWidget):
+    """현재 페이지만큼만 크기를 요구한다.
+
+    기본 QStackedWidget은 모든 페이지의 최대 sizeHint를 써서
+    작은 창에서 스크롤이 안 생기고 창을 늘려야 보이는 문제가 생긴다.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.currentChanged.connect(self._sync)
+
+    def _sync(self, *_):
+        self.updateGeometry()
+        self.adjustSize()
+
+    def sizeHint(self):
+        w = self.currentWidget()
+        return w.sizeHint() if w is not None else super().sizeHint()
+
+    def minimumSizeHint(self):
+        # 스크롤 영역이 창 크기보다 작은 뷰포트에서도 스크롤바를 낼 수 있게
+        # 최소 높이를 과하게 요구하지 않는다.
+        from PySide6.QtCore import QSize
+
+        w = self.currentWidget()
+        if w is not None:
+            mh = w.minimumSizeHint()
+            return QSize(mh.width(), min(mh.height(), 240))
+        return QSize(0, 0)
+
+
 class _Stage(QWidget):
     """단계 공통 뼈대."""
 
@@ -1180,8 +1211,7 @@ class NotationDialog(QDialog):
         # 화면보다 큰 레이아웃이 스크롤로 자연스럽게 접히게 한다.
         self.setMinimumSize(560, 360)
 
-        self.stack = QStackedWidget()
-        self.stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.stack = _FittingStack()
         self.pages: List[_Stage] = []
         self.buttons: List[QPushButton] = []
 
@@ -1229,6 +1259,12 @@ class NotationDialog(QDialog):
         self.resize(1040, 820)
         self._refresh_buttons()
         self.goto(self._first_unpassed(), force=True)
+
+    def sizeHint(self):
+        # 내용 전체를 밀어붙이지 말고, 화면에 맞춰 스크롤되게 한다.
+        from PySide6.QtCore import QSize
+
+        return QSize(980, 720)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
