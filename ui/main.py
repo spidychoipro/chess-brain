@@ -247,7 +247,8 @@ class MainWindow(QMainWindow):
         for i, (_, key) in enumerate(PAGES):
             color = "#ffffff" if i == index else theme.MUTED
             self.nav.item(i).setIcon(theme.icon(ICON_KEYS[key], color))
-        key = PAGES[index][1]
+        title, key = PAGES[index]
+        self.setWindowTitle(f"chess-brain · {title}")
         page = self._page(key)
         self.stack.setCurrentWidget(page)
         self._fade_page(page)
