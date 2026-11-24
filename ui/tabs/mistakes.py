@@ -185,7 +185,7 @@ class MistakesTab(QWidget):
         # 노테이션을 모르면 SAN 표가 무의미하니, 행을 고르면 보드가 뜨게 한다.
         self.board = ChessBoard()
         self.board.set_interactive(False)
-        self.board.setMinimumWidth(320)
+        self.board.setMinimumSize(260, 260)
         self.lbl_preview_title = theme.label("포지션 미리보기", role="h2")
         self.lbl_preview_move = theme.label("", role="small")
         self.lbl_preview_move.setWordWrap(True)
@@ -208,7 +208,8 @@ class MistakesTab(QWidget):
         split.setStretchFactor(1, 2)
         split.setHandleWidth(16)
         split.setChildrenCollapsible(False)
-        split.setSizes([470, 350])
+        # 작은 창에서도 양쪽이 다 보이게, 보드 쪽은 접을 수 있게 최소를 낮춘다.
+        split.setSizes([520, 320])
         layout.addWidget(split, 1)
         layout.addWidget(self.btn_more)
 

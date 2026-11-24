@@ -68,7 +68,8 @@ class ChessBoard(QWidget):
         self._hide_pieces = False
         self._picks: List[int] = []
         self._glow: Optional[int] = None
-        self.setMinimumSize(340, 340)
+        # 너무 크게 잡으면 작은 창/노트북에서 스크롤이 있어도 레이아웃이 밀린다.
+        self.setMinimumSize(240, 240)
 
     # -- api ---------------------------------------------------------------
 

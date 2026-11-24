@@ -174,6 +174,7 @@ def read_ladder() -> List[Dict[str, Any]]:
 def _two_col(board: QWidget, side: QVBoxLayout) -> QHBoxLayout:
     body = QHBoxLayout()
     body.setSpacing(18)
+    board.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     body.addWidget(board, 3)
     wrap = QWidget()
     wrap.setLayout(side)
@@ -181,7 +182,7 @@ def _two_col(board: QWidget, side: QVBoxLayout) -> QHBoxLayout:
     scroll.setWidgetResizable(True)
     scroll.setFrameShape(QFrame.NoFrame)
     scroll.setWidget(wrap)
-    scroll.setMinimumWidth(250)
+    scroll.setMinimumWidth(220)
     body.addWidget(scroll, 2)
     return body
 
@@ -1176,10 +1177,11 @@ class NotationDialog(QDialog):
         self.setWindowTitle("기보 읽기 배우기")
         # 레이아웃 최소 크기가 화면보다 클 수 있어서, 창이 줄어들 수 있게 바닥을 낮춘다.
         # (넘치는 단계 내용은 아래 스크롤 영역이 처리)
-        self.setMinimumSize(620, 420)
+        # 화면보다 큰 레이아웃이 스크롤로 자연스럽게 접히게 한다.
+        self.setMinimumSize(560, 360)
 
         self.stack = QStackedWidget()
-        self.stack.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.pages: List[_Stage] = []
         self.buttons: List[QPushButton] = []
 
@@ -1218,6 +1220,8 @@ class NotationDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.viewport().setAutoFillBackground(False)
         scroll.setWidget(self.stack)
         root.addWidget(scroll, 1)
