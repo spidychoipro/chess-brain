@@ -19,7 +19,11 @@ $fallback = "C:\Users\swpar\AppData\Local\Programs\Python\Python314\Lib\site-pac
 if ($LASTEXITCODE -ne 0) {
     if (Test-Path $fallback) {
         Write-Host "== 3.15 패키지 없음 — 3.14 site-packages 사용 =="
-        $env:PYTHONPATH = $fallback + [IO.Path]::PathSeparator + $env:PYTHONPATH
+        # 3.15 에 직접 설치한 모듈(cryptography 등)이 먼저 보이게 두고,
+        # 없는 것(CHESS/PySide6)만 3.14 폴더에서 빌려 온다.
+        $own = Join-Path (Split-Path $py) "Lib\site-packages"
+        $env:PYTHONPATH = $own + [IO.Path]::PathSeparator + $fallback +
+            [IO.Path]::PathSeparator + $env:PYTHONPATH
     }
 }
 
