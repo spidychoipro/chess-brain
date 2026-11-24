@@ -5,7 +5,7 @@ import json
 from typing import Optional
 import chess
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget
 from core import db, sr as sr_mod
 from core.utils import loss_label
 from ui import theme
@@ -68,6 +68,8 @@ class ReviewPanel(QWidget):
         self.board.movePlayedUci.connect(self._remember_uci)
         self.board.moveMade.connect(self._on_move)
         self.lbl_section = theme.label("", role="caption")
+        self.lbl_turn = QLabel("")
+        self.lbl_turn.setWordWrap(True)
         self.lbl_prompt = theme.label("", role="h1")
         self.lbl_context = theme.label("", role="muted")
         self.lbl_feedback = theme.label("", role="h2")
@@ -107,7 +109,7 @@ class ReviewPanel(QWidget):
         side_layout = QVBoxLayout(side)
         side_layout.setContentsMargins(8, 0, 8, 0)
         side_layout.setSpacing(14)
-        for widget in (self.lbl_section, self.lbl_prompt, self.lbl_context, self.btn_reveal,
+        for widget in (self.lbl_section, self.lbl_turn, self.lbl_prompt, self.lbl_context, self.btn_reveal,
                        self.lbl_feedback, self.lbl_reason, self.replay, self.btn_retry, self.btn_next):
             side_layout.addWidget(widget)
         side_layout.addStretch(1)
@@ -140,7 +142,17 @@ class ReviewPanel(QWidget):
         position = chess.Board(item["fen"])
         source = {"human": "사람전", "bot": "봇전"}.get(item.get("source"), "")
         mode = "연습 · 복습 일정 유지" if self._is_practice(item) else "오늘의 복습"
-        self.lbl_section.setText(f"{source} · {position.fullmove_number}수째 · {'백' if position.turn else '흑'} 차례\n{mode}")
+        white_turn = bool(position.turn == chess.WHITE)
+        turn_text = "백 차례" if white_turn else "흑 차례"
+        turn_bg = "#f3f4f6" if white_turn else "#111827"
+        turn_fg = "#111827" if white_turn else "#f9fafb"
+        turn_border = "#9ca3af" if white_turn else "#374151"
+        self.lbl_turn.setText(f"● {turn_text} · 내가 둘 차례")
+        self.lbl_turn.setStyleSheet(
+            f"QLabel {{ background:{turn_bg}; color:{turn_fg}; border:1px solid {turn_border};"
+            " border-radius:10px; padding:10px 12px; font-size:16px; font-weight:700; }"
+        )
+        self.lbl_section.setText(f"{source} · {position.fullmove_number}수째 · {turn_text}\n{mode}")
         self.lbl_context.setText("이전 기보\n" + (item.get("context_sans") or "시작 국면"))
         self.lbl_prompt.setText("이 국면에서 더 좋은 수를 찾아보세요")
         if self.item_type == "problem" and item.get("origin") == "line":
