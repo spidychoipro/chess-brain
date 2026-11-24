@@ -4,6 +4,8 @@ Home is the entry point: it shows today's work and the actions that lead to it.
 """
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QPropertyAnimation, QTimer
 
 from PySide6.QtWidgets import (
@@ -13,6 +15,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QProgressBar,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -99,6 +102,11 @@ class MainWindow(QMainWindow):
         self.lbl_sub = theme.label("", role="small")
         self.lbl_sync = theme.label("대국 확인 중…", role="small")
         self.lbl_sync.setWordWrap(True)
+        self.progress = QProgressBar()
+        self.progress.setObjectName("HeaderProgress")
+        self.progress.setFixedWidth(150)
+        self.progress.setRange(0, 0)
+        self.progress.setVisible(False)
         self.btn_update = QPushButton("업데이트 확인")
         self.btn_update.setProperty("variant", "ghost")
         self.btn_update.clicked.connect(self._check_updates)
@@ -110,6 +118,7 @@ class MainWindow(QMainWindow):
         header_layout.addSpacing(12)
         header_layout.addWidget(self.lbl_sub, 1)
         header_layout.addWidget(self.lbl_sync)
+        header_layout.addWidget(self.progress)
         header_layout.addWidget(self.btn_update)
         header_layout.addWidget(self.btn_refresh)
 
@@ -269,16 +278,18 @@ class MainWindow(QMainWindow):
             return
         if self._auto_worker is not None and self._auto_worker.isRunning():
             return
-        self.lbl_sync.setText("새 대국 확인 중…")
+        self.lbl_sync.setText("대국 확인 중… (준비)")
+        self._auto_start = time.monotonic()
+        self.progress.setRange(0, 0)
+        self.progress.setVisible(True)
         worker = PipelineWorker(
             pipeline.auto_catch_up, cfg=cfg_mod.load_config(), fetch_all=fetch_all
         )
         self._auto_worker = worker
         worker.done.connect(self._on_auto_caught_up)
         worker.message.connect(self._on_auto_message)
-        worker.failed.connect(
-            lambda msg: self.lbl_sync.setText(f"대국 확인 실패: {msg}")
-        )
+        worker.progressed.connect(self._on_auto_progress)
+        worker.failed.connect(self._on_auto_failed)
         worker.start()
 
     def _on_auto_message(self, message: str) -> None:
@@ -291,7 +302,26 @@ class MainWindow(QMainWindow):
             line = line[:67] + "…"
         self.lbl_sync.setText(line)
 
+    def _on_auto_progress(self, done: int, total: int, message: str) -> None:
+        elapsed = int(time.monotonic() - getattr(self, "_auto_start", time.monotonic()))
+        lines = str(message).strip().splitlines()
+        text = lines[-1] if lines else ""
+        if len(text) > 42:
+            text = text[:39] + "…"
+        if total > 0:
+            self.progress.setRange(0, total)
+            self.progress.setValue(min(int(done), total))
+            self.lbl_sync.setText(f"대국 확인 {done}/{total} · {elapsed}초 · {text}")
+        else:
+            self.progress.setRange(0, 0)
+            self.lbl_sync.setText(f"대국 확인 중 · {elapsed}초 · {text}")
+
+    def _on_auto_failed(self, message: str) -> None:
+        self.progress.setVisible(False)
+        self.lbl_sync.setText(f"대국 확인 실패: {message}")
+
     def _on_auto_caught_up(self, result: dict) -> None:
+        self.progress.setVisible(False)
         new = int(result.get("new_games", 0) or 0)
         fetched = int(result.get("fetched", 0) or 0)
         if new:

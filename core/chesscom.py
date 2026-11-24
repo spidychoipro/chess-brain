@@ -142,6 +142,29 @@ def fetch_recent(
 
         threading.Thread(target=_read, daemon=True).start()
 
+        # 도구 출력에서 단계별 전체/현재 개수를 뽑아 진행률로 보낸다.
+        # "몇 판 봤고 몇 판 남았는지"가 보여야 언제 끝나는지 감이 온다.
+        total = 0
+        done = 0
+
+        def _report(line: str) -> None:
+            nonlocal total, done
+            if not on_progress:
+                return
+            text = line.strip()
+            found = re.search(r"(?:후보|API\s*에서|에서)\s*(\d+)\s*개", text)
+            found = found or re.search(r"(\d+)\s*개\s*확인", text)
+            if found and ("게임" in text or "후보" in text or "확인" in text):
+                count = int(found.group(1))
+                if count != total:
+                    total, done = count, 0
+            if ".pgn" in text.lower():
+                done += 1
+            if total:
+                on_progress({"done": min(done, total), "total": total, "message": text})
+            else:
+                on_progress(text)
+
         deadline = time.monotonic() + timeout
         while True:
             try:
@@ -157,8 +180,7 @@ def fetch_recent(
             if line.strip():
                 lines.append(line)
                 _append_log(line)
-                if on_progress:
-                    on_progress(line)
+                _report(line)
 
         code = proc.wait(timeout=max(1, deadline - time.monotonic()))
         output = "\n".join(lines)
