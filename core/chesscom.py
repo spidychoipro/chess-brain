@@ -78,8 +78,9 @@ def fetch_recent(
 ) -> Dict[str, Any]:
     """chess.com 에서 새 PGN 을 받는다. 출력을 실시간으로 보여준다.
 
-    ``full=True`` 면 ``--all`` 로 아직 안 받은 과거 게임 전부를 훑는다. 앱을 켠
-    뒤 첫 따라잡기에서 쓴다. 그 외에는 도구 기본값(최근 7일)으로 가볍게 확인한다.
+    ``full=True`` 면 ``--all`` 로 아직 안 받은 과거 게임 전부를 훑는다. 사람이든
+    봇이든 판 수 상관없이 전부 가져온다. 앱을 켠 뒤 첫 따라잡기에서 쓴다.
+    그 외에는 도구 기본값(최근 7일)으로 가볍게 확인한다.
     """
     result: Dict[str, Any] = {
         "ran": False, "ok": False, "new": 0, "error": "", "full": bool(full)
@@ -96,14 +97,17 @@ def fetch_recent(
         result["error"] = "수집 도구를 돌릴 파이썬을 찾지 못했어요."
         return result
 
-    # 사람 게임은 달 단위 API라 과거 전부 받아도 1~2초면 끝난다. 봇은 게임마다
-    # 브라우저를 띄워서 수백 개를 한 번에 훑으면 10분 넘게 걸리므로 최근 것만 본다.
-    cmd = [python, script] + (["--all-humans"] if full else [])
+    # --all 은 사람+봇 과거 전부를 뜻한다. --all-humans 는 봇을 최근 7일로
+    # 제한했기 때문에 봇 게임을 많이 둔 사용자는 예전 대국을 영원히 못 받았다.
+    # 도구가 브라우저는 한 번만 띄우고 몰아서 받으므로 전체 모드도 쓸 만하다.
+    cmd = [python, script] + (["--all"] if full else [])
     # 제일 느린 건 드라이브 파일 목록 읽기(20~40초)였다. 도구가 로컬 파일과
     # processed 만으로 중복을 판단하도록 해서 3분의 2 정도를 줄인다.
     if cfg_mod.get(cfg, "chesscom.skip_drive_list", True):
         cmd.append("--no-drive-list")
-    timeout = int(cfg_mod.get(cfg, "chesscom.fetch_timeout", 900) or 900)
+    # 전체 수집은 봇 PGN 을 몰아서 받느라 기본 900초를 넘길 수 있다.
+    key = "chesscom.full_fetch_timeout" if full else "chesscom.fetch_timeout"
+    timeout = int(cfg_mod.get(cfg, key, 3600 if full else 900) or (3600 if full else 900))
     mode = "전체" if full else "최근 7일"
     banner = f"chess.com에서 새 대국 확인 ({mode})…"
     if on_progress:

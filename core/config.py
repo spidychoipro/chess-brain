@@ -20,7 +20,8 @@ DEFAULTS: Dict[str, Any] = {
         "auto_fetch": True,       # 앱을 켤 때 chess.com 에서 새 대국 먼저 받기
         "sync_script": "",
         "python": "",            # 비우면 도구 옆 python.cmd 에 적힌 파이썬 사용
-        "fetch_timeout": 900,    # 초. 5개월치 300판 따라잡기처럼 오래 걸릴 수 있다.
+        "fetch_timeout": 900,    # 초. 최근 7일 확인용
+        "full_fetch_timeout": 3600,  # 초. 사람+봇 과거 전부 따라잡기용
         "skip_drive_list": True,  # 드라이브 목록 대신 로컬 파일+processed로 중복 판단(빠름)
     },
     "google_drive": {
