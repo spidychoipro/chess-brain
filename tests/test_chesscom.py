@@ -61,9 +61,17 @@ class ChesscomFetchTests(unittest.TestCase):
         self.assertTrue(result['ok'])
         self.assertEqual(result['new'], 300)
         args = popen.call_args.args[0]
-        self.assertIn('--all-humans', args)
-        self.assertNotIn('--all', args)
+        self.assertIn('--all', args)
+        self.assertNotIn('--all-humans', args)
         self.assertIn('--no-drive-list', args)
+
+    def test_full_run_allows_longer_timeout(self):
+        fake = FakePopen([])
+        with patch.object(chesscom.subprocess, 'Popen', return_value=fake), \
+             patch.object(chesscom.Queue, 'get', side_effect=Empty), \
+             patch.object(chesscom.time, 'monotonic', side_effect=[0, 4000]):
+            result = chesscom.fetch_recent(self.cfg, full=True)
+        self.assertIn('3600초', result['error'])
 
     def test_recent_run_omits_all_flag(self):
         result, popen = self._run(lines=('새로 저장 30개',), full=False)
