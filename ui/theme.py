@@ -27,9 +27,14 @@ SUCCESS = "#3fbf7f"
 DANGER = "#ef5f6b"
 WARNING = "#f0b429"
 
+# Windows 기본 고정 폰트를 쓴다. Noto Sans KR / Cascadia Mono 는 설치된 게
+# variable font라 Qt DirectWrite에서 획이 뒤섞여 보인다. 정적 폰트로 고정.
+FONT_UI = "Malgun Gothic"
+FONT_MONO = "Consolas"
+
 STYLESHEET = f"""
 * {{
-    font-family: "Noto Sans KR", "Segoe UI", "Malgun Gothic", sans-serif;
+    font-family: "{FONT_UI}";
 }}
 QWidget {{
     color: {TEXT};
@@ -60,6 +65,7 @@ QWidget {{
     color: {TEXT};
 }}
 #BrandGlyph {{
+    font-family: "Segoe UI Symbol";
     font-size: 22px;
 }}
 #HeaderSub {{
@@ -102,7 +108,7 @@ QLabel[role="empty"] {{
 }}
 
 QLabel#LineText {{
-    font-family: "Cascadia Mono", "Consolas", "D2Coding", monospace;
+    font-family: "{FONT_MONO}";
     font-size: 17px;
     color: {TEXT};
     background: {BG};
@@ -111,7 +117,7 @@ QLabel#LineText {{
     padding: 18px;
 }}
 QLabel#AnswerText {{
-    font-family: "Cascadia Mono", "Consolas", "D2Coding", monospace;
+    font-family: "{FONT_MONO}";
     font-size: 15px;
     color: {MUTED};
 }}
@@ -178,7 +184,7 @@ QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
     border: 1px solid {ACCENT};
 }}
 QLineEdit#AnswerInput {{
-    font-family: "Cascadia Mono", "Consolas", "D2Coding", monospace;
+    font-family: "{FONT_MONO}";
     font-size: 19px;
     padding: 12px 14px;
 }}
@@ -265,7 +271,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 
 def apply(app) -> None:
     app.setStyleSheet(STYLESHEET)
-    app.setFont(QFont("Noto Sans KR", 10))
+    app.setFont(QFont(FONT_UI, 10))
 
 
 def card(parent: QWidget | None = None, flat: bool = False) -> QFrame:

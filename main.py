@@ -152,6 +152,10 @@ def main() -> int:
     if log:
         log("window-built")
     window.show()
+
+    from ui.window_style import apply_modern_window
+
+    apply_modern_window(window)
     if log:
         log("shown")
     rc = app.exec()
