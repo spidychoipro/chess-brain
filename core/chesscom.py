@@ -29,6 +29,32 @@ from core import utils
 _SAVED = re.compile(r"새로\s*저장\s*(\d+)\s*개")
 _EXE = re.compile(r'"([^"]+\.exe)"', re.IGNORECASE)
 LOG_NAME = "chesscom-sync.log"
+LAST_FULL_NAME = "last-full-fetch.txt"
+FULL_INTERVAL_SECONDS = 6 * 3600  # 전체 훑기는 6시간에 한 번이면 충분하다.
+
+
+def _last_full_path() -> Path:
+    return utils.data_dir() / LAST_FULL_NAME
+
+
+def should_full_fetch() -> bool:
+    """마지막 전체 수집이 오래됐거나 기록이 없으면 켤 때 전체를 훑는다."""
+    try:
+        raw = _last_full_path().read_text(encoding="utf-8").strip()
+        last = datetime.fromisoformat(raw)
+    except (OSError, ValueError):
+        return True
+    return (datetime.now() - last).total_seconds() >= FULL_INTERVAL_SECONDS
+
+
+def mark_full_fetch() -> None:
+    """전체 수집이 끝났을 때만 기록한다. 실패하면 다음에 다시 시도한다."""
+    try:
+        path = _last_full_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(datetime.now().isoformat(timespec="seconds"), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def script_path(cfg: Dict[str, Any]) -> str:
@@ -123,12 +149,15 @@ def fetch_recent(
             cmd,
             cwd=str(Path(script).parent),
             env=env,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            # GUI 앱에서 자식 콘솔 창이 튀어나오지 않게 한다 (rclone 쪽도 동일).
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         queue: Queue = Queue()
 
@@ -194,6 +223,8 @@ def fetch_recent(
         else:
             done = f"chess.com PGN {result['new']}개 저장"
             _append_log(f"[완료] {done}")
+            if full:
+                mark_full_fetch()
             if on_progress:
                 on_progress(done)
     except subprocess.TimeoutExpired:

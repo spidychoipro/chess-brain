@@ -5,6 +5,7 @@ import io
 import subprocess
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from queue import Empty
 from unittest.mock import patch
@@ -44,8 +45,12 @@ class ChesscomFetchTests(unittest.TestCase):
         cfg_mod.set_(self.cfg, 'chesscom.auto_fetch', True)
         self.log_patch = patch.object(chesscom, '_append_log')
         self.log_patch.start()
+        self.real_mark_full = chesscom.mark_full_fetch
+        self.mark_patch = patch.object(chesscom, 'mark_full_fetch')
+        self.mark_patch.start()
 
     def tearDown(self):
+        self.mark_patch.stop()
         self.log_patch.stop()
         self.temp.cleanup()
 
@@ -64,6 +69,23 @@ class ChesscomFetchTests(unittest.TestCase):
         self.assertIn('--all', args)
         self.assertNotIn('--all-humans', args)
         self.assertIn('--no-drive-list', args)
+        chesscom.mark_full_fetch.assert_called_once_with()
+
+    def test_console_window_is_hidden(self):
+        _, popen = self._run()
+        kw = popen.call_args.kwargs
+        self.assertEqual(kw['stdin'], subprocess.DEVNULL)
+        self.assertTrue(kw['creationflags'] & subprocess.CREATE_NO_WINDOW)
+
+    def test_full_fetch_interval(self):
+        path = self.root / 'last-full.txt'
+        with patch.object(chesscom, '_last_full_path', return_value=path):
+            self.assertTrue(chesscom.should_full_fetch())
+            self.real_mark_full()
+            self.assertFalse(chesscom.should_full_fetch())
+            old = (datetime.now() - timedelta(hours=7)).isoformat(timespec='seconds')
+            path.write_text(old, encoding='utf-8')
+            self.assertTrue(chesscom.should_full_fetch())
 
     def test_full_run_allows_longer_timeout(self):
         fake = FakePopen([])

@@ -1,6 +1,6 @@
 """App version and GitHub update endpoint (single source of truth)."""
 
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 
 GITHUB_REPO = "spidychoipro/chess-brain"
 TAGS_API = f"https://api.github.com/repos/{GITHUB_REPO}/tags?per_page=1"

@@ -143,9 +143,13 @@ class MainWindow(QMainWindow):
         # 앱을 켜지 않은 사이 쌓인 대국을 자동으로 따라잡는다. 켜져 있는 동안에도
         # 10분마다 한 번씩 확인해서 드라이브에 새 대국이 들어오면 바로 읽는다.
         self._auto_worker = None
-        # 켜질 때는 과거 게임 전부를 훑는다(방치 기간이 길어도 놓치지 않게).
-        # 켜져 있는 동안에는 최근 7일만 가볍게 확인한다.
-        QTimer.singleShot(700, lambda: self._auto_catch_up(fetch_all=True))
+        # 켜질 때마다 과거 전부를 훑으면 시작이 늘어진다. 평소에는 최근 7일만
+        # 빠르게 확인하고, 전체는 마지막 전체 수집이 6시간 넘었을 때만 한다.
+        # 전체 수집은 설정의 '지금 가져오기'로 언제든 직접 실행할 수 있다.
+        from core import chesscom as chesscom_mod
+
+        full_due = chesscom_mod.should_full_fetch()
+        QTimer.singleShot(700, lambda: self._auto_catch_up(fetch_all=full_due))
         self._sync_timer = QTimer(self)
         self._sync_timer.setInterval(10 * 60 * 1000)
         self._sync_timer.timeout.connect(lambda: self._auto_catch_up(fetch_all=False))
