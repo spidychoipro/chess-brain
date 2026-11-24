@@ -8,8 +8,6 @@
 ![tests 67 passing](https://img.shields.io/badge/tests-67%20passing-brightgreen)
 ![Stockfish GPLv3](https://img.shields.io/badge/engine-Stockfish%20sf__19%20GPLv3-orange)
 
-![chess-brain 화면](assets/screenshot.png)
-
 Windows 데스크톱 앱이다. 설치 프로그램 없이 폴더를 풀어서 쓰거나, 소스에서 직접 실행할 수도 있다. 내 대국은 내 폴더에, 기록은 SQLite에, 분석은 로컬 Stockfish에서 돌아간다. 로그인도 결제도 없다.
 
 ## 하는 일
@@ -181,7 +179,7 @@ ui/
   board.py              클릭으로 수 두는 보드
   widgets.py            복습 패널 (테마·해설 표시)
   tabs/                 home, mistakes, training, curriculum, stats, settings
-assets/                 로고 SVG, 화면 캡처
+assets/                 로고 SVG
 tests/                  unittest 67개
 docs/learning-upgrade.md  학습 규칙 변경 기록
 ```
