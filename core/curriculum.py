@@ -97,8 +97,68 @@ def is_lost_position(item: Dict[str, Any]) -> bool:
         return False
 
 
+def _back_rank_risk(board: chess.Board, side: chess.Color) -> bool:
+    """왕이 끝 랭크에 있고 앞 폰 방어가 없는데 상대 중기물이 있는지."""
+    ksq = board.king(side)
+    if ksq is None or chess.square_rank(ksq) not in (0, 7):
+        return False
+    rank = chess.square_rank(ksq)
+    enemy = not side
+    if not (board.pieces(chess.ROOK, enemy) or board.pieces(chess.QUEEN, enemy)):
+        return False
+    f = chess.square_file(ksq)
+    step = 1 if rank == 0 else -1
+    for ff in (f - 1, f, f + 1):
+        if 0 <= ff < 8:
+            piece = board.piece_at(chess.square(ff, rank + step))
+            if piece and piece.color == side and piece.piece_type == chess.PAWN:
+                return False
+    return True
+
+
+def _pin_set(board: chess.Board, side: chess.Color) -> frozenset:
+    return frozenset(
+        sq
+        for piece_type in (chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN)
+        for sq in board.pieces(piece_type, side)
+        if board.is_pinned(side, sq)
+    )
+
+
+def _hanging_squares(board: chess.Board, side: chess.Color) -> frozenset:
+    """지금 상대가 공격하고 있는 내 논폰 기물 위치."""
+    enemy = not side
+    return frozenset(
+        sq
+        for sq, piece in board.piece_map().items()
+        if piece.color == side
+        and piece.piece_type != chess.PAWN
+        and board.is_attacked_by(enemy, sq)
+    )
+
+
+def _fork_squares(board: chess.Board, side: chess.Color) -> frozenset:
+    """상대 기물 하나가 side의 가치 있는 기물 두 개를 동시에 노리는 위치."""
+    enemy = not side
+    out = set()
+    for sq, piece in board.piece_map().items():
+        if piece.color != enemy:
+            continue
+        targets = [
+            target
+            for target in (board.piece_at(s) for s in board.attacks(sq))
+            if target
+            and target.color == side
+            and target.piece_type != chess.KING
+            and PIECE_VALUE[target.piece_type] >= 3
+        ]
+        if len(targets) >= 2:
+            out.add(sq)
+    return frozenset(out)
+
+
 def classify(item: Dict[str, Any]) -> str:
-    """실수 하나에 테마를 붙인다. 보드facts + 엔진 PV만 쓴다."""
+    """실수 하나에 테마를 붙인다. 착수 전후를 비교해 '이번 수로 새로 생긴' 것만 고른다."""
     try:
         board = chess.Board(item["fen"])
     except Exception:
@@ -120,51 +180,32 @@ def classify(item: Dict[str, Any]) -> str:
     my_uci = reply[0] if reply else ""
     after = _move(board, my_uci)
     my_side = board.turn
+    after_reply = _move(after, reply[1]) if after is not None and len(reply) >= 2 else None
 
-    # 백 랭크: 내 왕이 1/8랭크에 있고 앞을 폰이 막지 않는데 상대가 룩/퀸을 가짐.
-    if after is not None:
-        ksq = after.king(my_side)
-        if ksq is not None and chess.square_rank(ksq) in (0, 7):
-            rank = chess.square_rank(ksq)
-            enemy = not my_side
-            heavy = bool(after.pieces(chess.ROOK, enemy) or after.pieces(chess.QUEEN, enemy))
-            f = chess.square_file(ksq)
-            step = 1 if rank == 0 else -1
-            shield = False
-            for ff in (f - 1, f, f + 1):
-                if 0 <= ff < 8:
-                    piece = after.piece_at(chess.square(ff, rank + step))
-                    if piece and piece.color == my_side and piece.piece_type == chess.PAWN:
-                        shield = True
-            if heavy and not shield:
-                return "back_rank"
+    # 백 랭크: 원래부터 열려 있던 왕은 이번 수 탓이 아니다.
+    if (
+        after is not None
+        and _back_rank_risk(after, my_side)
+        and not _back_rank_risk(board, my_side)
+    ):
+        return "back_rank"
 
-    # 상대 응수가 내 기물을 잡았으면 '걸림'이다.
+    # 걸림: 착수 전에는 안전했던 기물을 이번 수로 노출했을 때만.
     if after is not None and len(reply) >= 2 and _legal(board, my_uci, reply[1]):
         reply_move = chess.Move.from_uci(reply[1])
         if after.is_capture(reply_move):
-            victim = after.piece_at(reply_move.to_square)
-            if victim and victim.piece_type != chess.PAWN:
-                return "hanging"
+            victim_sq = reply_move.to_square
+            if victim_sq not in _hanging_squares(board, my_side):
+                victim = after.piece_at(victim_sq)
+                if victim and victim.piece_type != chess.PAWN:
+                    return "hanging"
 
-    after_reply = _move(after, reply[1]) if after is not None and len(reply) >= 2 else None
+    # 포크·핀도 착수 전에 없던 것이 새로 생겨야 테마를 붙인다.
     if after_reply is not None:
-        mover = after_reply.piece_at(chess.Move.from_uci(reply[1]).to_square)
-        if mover:
-            attacked = [
-                after_reply.piece_at(sq)
-                for sq in after_reply.attacks(chess.Move.from_uci(reply[1]).to_square)
-            ]
-            valuable = [
-                p for p in attacked
-                if p and p.color == my_side and p.piece_type != chess.KING
-                and PIECE_VALUE[p.piece_type] >= 3
-            ]
-            if len(valuable) >= 2:
-                return "fork"
-        for piece_type in (chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN):
-            if any(after_reply.is_pinned(my_side, sq) for sq in after_reply.pieces(piece_type, my_side)):
-                return "pin"
+        if _fork_squares(after_reply, my_side) - _fork_squares(board, my_side):
+            return "fork"
+        if _pin_set(after_reply, my_side) - _pin_set(board, my_side):
+            return "pin"
 
     # 내가 상대 기물을 잡을 수 있었는데 안 잡았다.
     if best:
@@ -228,7 +269,7 @@ def explain(item: Dict[str, Any], theme: Optional[str] = None) -> str:
     if theme == "missed_mate":
         return f"{best}로 메이트를 만들 수 있었는데 놓쳤습니다. {my}은 결정력을 놓친 수였습니다."
     if theme == "back_rank":
-        return f"내 왕 앞이 열려 있어 백 랭크 메이트 위험이 있습니다. {best}로 통로를 막아야 합니다."
+        return f"이번 수로 내 왕 앞 통로가 열렸습니다. {best}로 막아야 합니다."
     if theme == "hanging":
         piece = _captured_piece(item)
         what = f"{piece}을(를)" if piece else "기물을"
@@ -281,8 +322,9 @@ def backfill() -> int:
 def theme_stats(source: Optional[str] = None) -> List[Dict[str, Any]]:
     """테마별 실수 수·복습 예정·정답률. 약한 테마가 위로 오게 정렬한다."""
     now = now_ts()
+    recent_from = now - 42 * 86400
     where = ["COALESCE(theme,'')<>''", "excluded=0"]
-    params: List[Any] = [now]
+    params: List[Any] = [now, recent_from]
     if source in ("bot", "human"):
         where.append("source=?")
         params.append(source)
@@ -296,7 +338,8 @@ def theme_stats(source: Optional[str] = None) -> List[Dict[str, Any]]:
                    SUM(CASE WHEN due_at>0 AND due_at<=? THEN 1 ELSE 0 END) due,
                    COALESCE(SUM(correct),0) c,
                    COALESCE(SUM(wrong),0) w,
-                   ROUND(AVG(loss),2) avg_loss
+                   ROUND(AVG(loss),2) avg_loss,
+                    SUM(CASE WHEN created_at>=? THEN 1 ELSE 0 END) recent
             FROM mistakes WHERE {clause}
             GROUP BY theme
             """,
@@ -311,6 +354,8 @@ def theme_stats(source: Optional[str] = None) -> List[Dict[str, Any]]:
         d["label"] = THEMES.get(d["theme"], d["theme"])
         d["mastery"] = round(d["c"] / seen, 2) if seen else None
         d["seen"] = seen
+        d["recent"] = int(d.pop("recent") or 0)
+        d["recurring"] = d["recent"] >= 3
         out.append(d)
     # 한 번도 안 틀린 테마도 약한 쪽으로 본다(아직 실력이 안 검증됐으니까).
     out.sort(key=lambda x: ((x["mastery"] if x["mastery"] is not None else 0.3), -x["total"]))
@@ -340,6 +385,7 @@ def recommend(limit: int = 10, source: Optional[str] = None,
             conn.close()
 
     stats = [s for s in theme_stats(source) if s["total"] >= 2]
+    stats.sort(key=lambda s: not s["recurring"])
     if not stats:
         return db.mistakes_due(limit=limit, source=source)
     themes = [s["theme"] for s in stats[:3]]

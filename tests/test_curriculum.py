@@ -42,18 +42,38 @@ class CurriculumTests(unittest.TestCase):
             'allowed_mate',
         )
 
-    def test_hanging_piece(self):
-        fen = '5r2/8/8/8/8/5N2/PPPP1PPP/RNBQKB1R w - - 0 1'
+    def test_hanging_already_exposed_is_not_blamed(self):
+        fen = '5r1k/8/8/8/8/5N2/PPPP1PPP/RNBQKB1R w - - 0 1'
         item = self.item(fen, reply_line=['a2a3', 'f8f3'], reply_san='Rxf3')
-        self.assertEqual(curriculum.classify(item), 'hanging')
+        self.assertNotEqual(curriculum.classify(item), 'hanging')
         self.assertIn('나이트', curriculum.explain(item, 'hanging'))
 
-    def test_back_rank(self):
+    def test_hanging_newly_exposed(self):
+        # f4 비숍이 f 파일을 막고 있다가 e5로 빠지면서 f3 나이트가 노출된다.
+        fen = '5r2/7k/8/8/5B2/5N2/PPPP1PPP/RNBQKB1R w - - 0 1'
+        item = self.item(fen, reply_line=['f4e5', 'f8f3'], reply_san='Rxf3')
+        self.assertEqual(curriculum.classify(item), 'hanging')
+
+    def test_back_rank_already_exposed_is_not_blamed(self):
         fen = '4r1k1/pppp1ppp/8/8/8/8/PPPP4/5RK1 w - - 0 1'
-        self.assertEqual(
-            curriculum.classify(self.item(fen, reply_line=['a2a3', 'e8e1'])),
-            'back_rank',
+        item = self.item(fen, reply_line=['a2a3', 'e8e1'])
+        self.assertNotEqual(curriculum.classify(item), 'back_rank')
+
+    def test_back_rank_newly_opened(self):
+        fen = '4r1k1/pppp1ppp/8/8/8/8/PPPP3P/5RK1 w - - 0 1'
+        item = self.item(fen, reply_line=['h2h4', 'e8e1'])
+        self.assertEqual(curriculum.classify(item), 'back_rank')
+
+    def test_pin_only_when_newly_created(self):
+        fen = 'r6k/8/8/8/8/8/P3B3/4K3 w - - 0 1'
+        item = self.item(fen, reply_line=['a2a3', 'a8e8'])
+        self.assertEqual(curriculum.classify(item), 'pin')
+
+        already = self.item(
+            '4r2k/8/8/8/8/8/P3B3/4K3 w - - 0 1',
+            reply_line=['a2a3', 'e8e7'],
         )
+        self.assertNotEqual(curriculum.classify(already), 'pin')
 
     def test_missed_capture(self):
         fen = '4k3/8/8/3q4/8/4P3/8/3RK3 w - - 0 1'
@@ -95,6 +115,18 @@ class CurriculumTests(unittest.TestCase):
         )
         self.assertEqual(db.get_mistake(mid)['excluded'], 1)
         self.assertEqual(curriculum.theme_stats(), [])
+
+    def test_recurring_theme_flag(self):
+        for i in range(3):
+            db.add_mistake(
+                fen=f'4r2k/8/8/8/8/8/{i+1}P6/4K3 w - - 0 1',
+                context_sans='', my_san='a3', best_san='e4',
+                eval_before=1, eval_after=-1, loss=2, source_game_id=f'g{i}',
+                source='human', ply=1, theme='pin',
+            )
+        pin = next(s for s in curriculum.theme_stats() if s['theme'] == 'pin')
+        self.assertEqual(pin['recent'], 3)
+        self.assertTrue(pin['recurring'])
 
     def test_recommend_picks_from_weakest_theme(self):
         for i in range(4):
