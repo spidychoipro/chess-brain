@@ -5,7 +5,7 @@
 # chess-brain
 
 ![Python 3.15.2](https://img.shields.io/badge/Python-3.15.2-3776ab?logo=python&logoColor=white)
-![tests 67 passing](https://img.shields.io/badge/tests-67%20passing-brightgreen)
+![tests 75 passing](https://img.shields.io/badge/tests-75%20passing-brightgreen)
 ![Stockfish sf_19 GPLv3](https://img.shields.io/badge/engine-Stockfish%20sf__19%20GPLv3-orange)
 ![release](https://img.shields.io/github/v/release/spidychoipro/chess-brain.svg)
 
@@ -115,7 +115,7 @@ main.py                 진입점 (--selftest)
 core/                   chesscom 수집, 파싱, 엔진 분석, 커리큘럼, SQLite, 간격반복
 ui/                     메인 창, 보드, 테마, 여섯 개 탭
 assets/chess-brain.svg  로고
-tests/                  unittest 67개
+tests/                  unittest 75개
 docs/learning-upgrade.md  학습 규칙 변경 기록
 ```
 
